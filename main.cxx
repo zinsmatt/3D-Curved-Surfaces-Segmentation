@@ -359,7 +359,7 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc)
   mls.setInputCloud(pc);
   mls.setPolynomialOrder(2);
   mls.setSearchMethod(tree);
-  mls.setSearchRadius(4.0);
+  mls.setSearchRadius(1.5);
   // Reconstruct
   mls.process (*mls_points);
   return mls_points;
@@ -386,11 +386,11 @@ int main(int argc, char* argv[])
   pcl::io::savePLYFile("smoothed.ply", *smoothed_pc);
   pc = smoothed_pc;
 
-  Pointcloud::Ptr small_pc(new Pointcloud(*pc));
-  voxelGridFilter(small_pc, 2.0);
-  std::cout << pc->size() << "\n";
-  std::cout << small_pc->size() << "\n";
-  pcl::io::savePLYFile("filtered.ply", *pc);
+//  Pointcloud::Ptr small_pc(new Pointcloud(*pc));
+//  voxelGridFilter(small_pc, 2.0);
+//  std::cout << pc->size() << "\n";
+//  std::cout << small_pc->size() << "\n";
+//  pcl::io::savePLYFile("filtered.ply", *pc);
 
   auto [planar_pts, other_pts] = classify_points(pc, pc);
   pcl::io::savePLYFile("planar_points.ply", *planar_pts);
