@@ -9,7 +9,7 @@ import numpy as np
 from mesh_io import write_obj, read_ply
 
         
-data = segyio.tools.cube('/home/matt/dev/Seismic_3D_Volume/training/inputs/t03.sgy')
+data = segyio.tools.cube('/home/matt/dev/Seismic_3D_Volume/training/inputs/t08.sgy')
 dim_z, dim_y, dim_x = data.shape
 
 
@@ -25,7 +25,7 @@ from sklearn.cluster import DBSCAN
 
 pts, _ = read_ply("build/planar_points.ply")
 
-clustering = DBSCAN(eps=5, min_samples=2).fit(pts)
+clustering = DBSCAN(eps=2, min_samples=8).fit(pts)
 nb_clusters = np.max(clustering.labels_) + 2
 colors = np.random.randint(0, 255, (nb_clusters, 3))
 

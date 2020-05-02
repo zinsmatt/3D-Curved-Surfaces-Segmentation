@@ -37,6 +37,8 @@
 #include <pcl/segmentation/region_growing.h>
 #include <pcl/features/boundary.h>
 #include <pcl/surface/mls.h>
+#include <pcl/surface/gp3.h>
+#include <pcl/segmentation/extract_clusters.h>
 
 #include <Eigen/Dense>
 
@@ -189,9 +191,11 @@ pcl::PointCloud<pcl::Normal>::Ptr compute_normals(Pointcloud::Ptr pc)
   pcl::search::Search<Point>::Ptr tree (new pcl::search::KdTree<Point>);
   pcl::PointCloud <pcl::Normal>::Ptr normals (new pcl::PointCloud <pcl::Normal>);
   pcl::NormalEstimation<Point, pcl::Normal> normal_estimator;
-  normal_estimator.setSearchMethod (tree);
+  normal_estimator.setSearchMethod(tree);
   normal_estimator.setInputCloud(pc);
-  normal_estimator.setKSearch(10);
+  //normal_estimator.setKSearch(10);
+  normal_estimator.setRadiusSearch(5);
+  normal_estimator.setViewPoint(-10, -10, -10);
   normal_estimator.compute(*normals);
  
   return normals;
@@ -359,10 +363,86 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc)
   mls.setInputCloud(pc);
   mls.setPolynomialOrder(2);
   mls.setSearchMethod(tree);
-  mls.setSearchRadius(1.5);
+  mls.setNumberOfThreads(8);
+  mls.setPolynomialFit(true);
+  mls.setPointDensity(10);
+  mls.setSqrGaussParam(4.0);
+  mls.setSearchRadius(2.0);
   // Reconstruct
   mls.process (*mls_points);
   return mls_points;
+}
+
+
+auto triangulate(Pointcloud::Ptr pc)
+{
+    pcl::PointCloud<pcl::Normal>::Ptr normals = compute_normals(pc);
+    pcl::PointCloud<pcl::PointNormal>::Ptr pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+    pcl::concatenateFields(*pc, *normals, *pc_with_normals);
+
+    pcl::search::KdTree<pcl::PointNormal>::Ptr tree(new pcl::search::KdTree<pcl::PointNormal>);
+    tree->setInputCloud(pc_with_normals);
+
+    //Initialize objects for triangulation
+    pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp;
+    pcl::PolygonMesh::Ptr triangles(new pcl::PolygonMesh());
+
+    //Max distance between connecting edge points
+    gp.setSearchRadius(5);
+    gp.setMu(1);
+    gp.setMaximumNearestNeighbors(10);
+    gp.setMaximumSurfaceAngle(M_PI/8); // 45 degrees
+    gp.setMinimumAngle(M_PI/18); // 10 degrees
+    gp.setMaximumAngle(2*M_PI/3); // 120 degrees
+    gp.setNormalConsistency(false);
+
+    // Get result
+    gp.setInputCloud(pc_with_normals);
+    gp.setSearchMethod(tree);
+    gp.reconstruct(*triangles);
+    return triangles;
+}
+
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr extract_euclidean_clusters(Pointcloud::Ptr pc)
+{
+  pcl::EuclideanClusterExtraction<Point> ec;
+  std::vector<pcl::PointIndices> clusters;
+  ec.setInputCloud(pc);
+  ec.setClusterTolerance(2.0);
+  ec.extract(clusters);
+  
+  srand (static_cast<unsigned int> (time (0)));
+  std::vector<unsigned char> colors;
+  for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
+  {
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+  }
+
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
+  colored_pc->resize(pc->size());
+  for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
+  {
+    auto& v = clusters[cluster_id];
+    for (auto i : v.indices)
+    {
+      colored_pc->points[i].x = pc->points[i].x;
+      colored_pc->points[i].y = pc->points[i].y;
+      colored_pc->points[i].z = pc->points[i].z;
+      colored_pc->points[i].r = colors[cluster_id * 3];
+      colored_pc->points[i].g = colors[cluster_id * 3 + 1];
+      colored_pc->points[i].b = colors[cluster_id * 3 + 2];
+    }
+  }
+  return colored_pc;
+}
+
+
+
+void growing_region()
+{
+
 }
 
 
@@ -386,6 +466,89 @@ int main(int argc, char* argv[])
   pcl::io::savePLYFile("smoothed.ply", *smoothed_pc);
   pc = smoothed_pc;
 
+
+  pcl::PointCloud<pcl::Normal>::Ptr normals = compute_normals(pc);
+  pcl::PointCloud<pcl::PointNormal>::Ptr pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+  pcl::concatenateFields(*pc, *normals, *pc_with_normals);
+  pcl::io::savePLYFile("smoothed_with_normals.ply", *pc_with_normals);
+
+
+  
+  
+  pcl::RegionGrowing<pcl::PointXYZ, pcl::Normal> reg;
+  pcl::search::Search<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+  tree->setInputCloud(pc);
+  reg.setMinClusterSize(3);
+  reg.setMaxClusterSize(1000000);
+  reg.setSearchMethod(tree);
+  reg.setNumberOfNeighbours(6);
+  reg.setInputCloud(pc);
+  reg.setInputNormals(normals);
+  reg.setSmoothnessThreshold(10.0 / 180.0 * M_PI);
+  //reg.setCurvatureThreshold(2.0);
+
+  std::vector<pcl::PointIndices> clusters;
+  reg.extract(clusters);
+  std::cout << "Number of clusters is equal to " << clusters.size () << std::endl;
+  pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
+
+  pcl::io::savePLYFile("regions_growing.ply", *colored_cloud); 
+
+
+  /**
+   * to continue, I need to merge some aprts together
+   * for that:
+   *  - look at each pair of parts
+   *  - extract the contour (optionnaly interpolate the contour points to make it more dense)
+   *  - try to find pair of points that has dist < threshold and angle(normal1, normal2) < threshold_angle, 
+   *    (optionally, compute a score and sort so that one point can only be paired to one point in the otehr contour)
+   *  - if there are sufficient connections, then merge the two parts together
+   *  - while merging interpolate points  along the links between the contours
+   * 
+   *  - triangulate the big parts to create a mesh
+   *  - apply hard smoothing before or after the triangulation
+   * 
+   * 
+   * 
+   * 
+   * 
+   * */
+
+
+  srand (static_cast<unsigned int> (time (0)));
+  std::vector<unsigned char> colors;
+  for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
+  {
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+  }
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
+  colored_pc->resize(pc->size());
+  for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
+  {
+    auto& v = clusters[cluster_id];
+    if (v.indices.size() < 20) continue;
+    for (auto i : v.indices)
+    {
+      colored_pc->points[i].x = pc->points[i].x;
+      colored_pc->points[i].y = pc->points[i].y;
+      colored_pc->points[i].z = pc->points[i].z;
+      colored_pc->points[i].r = colors[cluster_id * 3];
+      colored_pc->points[i].g = colors[cluster_id * 3 + 1];
+      colored_pc->points[i].b = colors[cluster_id * 3 + 2];
+    }
+  }
+  pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
+
+
+  return 0;
+  auto mesh = triangulate(pc);
+  std::cout << "nb faces = " << mesh->polygons.size() << "\n";
+  pcl::io::savePLYFile("mesh.ply", *mesh);
+
+
+
 //  Pointcloud::Ptr small_pc(new Pointcloud(*pc));
 //  voxelGridFilter(small_pc, 2.0);
 //  std::cout << pc->size() << "\n";
@@ -397,7 +560,8 @@ int main(int argc, char* argv[])
   pcl::io::savePLYFile("other_points.ply", *other_pts);
 
 
-
+  auto euclidean = extract_euclidean_clusters(planar_pts);
+  pcl::io::savePLYFile("euclidean_clusters.ply", *euclidean);
 /*
   auto [clusters, colored_pc] = segment_point_cloud(planar_pts);
   pcl::io::savePLYFile("colored_pc.ply", *colored_pc);
