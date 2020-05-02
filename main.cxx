@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <unordered_set>
 #include <filesystem>
+#include <numeric>
  
 #include <pcl/point_cloud.h>
 #include <pcl/filters/voxel_grid.h>
@@ -56,10 +57,16 @@ class Match_debugger
 {
   public:
 
-  void add_points(Point a, Point b)
+  void add_edge(Point a, Point b)
   {
     points.push_back(a);
     points.push_back(b);
+  }
+
+  /// Add some points, not defining edges (this should be done after all the edges)
+  void add_raw_point_cloud(Pointcloud::Ptr pc)
+  {
+    other_points.insert(other_points.end(), pc->points.begin(), pc->points.end());
   }
 
   void save_obj(const std::string& name) const
@@ -73,11 +80,18 @@ class Match_debugger
     {
       file << "l " << i << " " << i+1 << "\n";
     }
+
+    for (auto& p : other_points)
+    {
+      file << "v " << std::to_string(p.x) << " " << std::to_string(p.y) << " " << std::to_string(p.z) << "\n";
+    }
+
     file.close();
   }
 
   private:
     std::vector<Point> points;
+    std::vector<Point> other_points;
 
 };
 
@@ -267,7 +281,7 @@ Pointcloud::Ptr detect_contour_points(Pointcloud::Ptr pc, pcl::PointCloud<pcl::N
   return contour_pts;
 }
 
-std::pair<Pointcloud::Ptr, pcl::PointCloud<pcl::Boundary>::Ptr> detect_contour_points2(Pointcloud::Ptr pc, pcl::PointCloud<pcl::Normal>::Ptr normals)
+std::pair<std::vector<int>, pcl::PointCloud<pcl::Boundary>::Ptr> detect_contour_points2(Pointcloud::Ptr pc, pcl::PointCloud<pcl::Normal>::Ptr normals)
 {
   pcl::PointCloud<pcl::Boundary>::Ptr boundaries(new pcl::PointCloud<pcl::Boundary>());
   pcl::BoundaryEstimation<pcl::PointXYZ, pcl::Normal, pcl::Boundary> est;
@@ -276,15 +290,15 @@ std::pair<Pointcloud::Ptr, pcl::PointCloud<pcl::Boundary>::Ptr> detect_contour_p
   est.setRadiusSearch(10.0);
   est.setSearchMethod(typename pcl::search::KdTree<pcl::PointXYZ>::Ptr(new pcl::search::KdTree<pcl::PointXYZ>));
   est.compute(*boundaries);
-  Pointcloud::Ptr contour_pts(new Pointcloud());
+  std::vector<int> ctrs_points_inds;
   for (unsigned int i = 0; i < boundaries->size(); ++i)
   {
     if (boundaries->points[i].boundary_point)
     {
-      contour_pts->push_back(pc->points[i]);
+      ctrs_points_inds.push_back(i);
     }
   }
-  return {contour_pts, boundaries};
+  return {ctrs_points_inds, boundaries};
 }
 
 bool try_merge(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, pcl::PointCloud<pcl::Boundary>::Ptr boundaries_a,
@@ -331,10 +345,7 @@ bool try_merge(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a
         distances.push_back(nearest_sq_dist.front());
       }
       nb_pts_ctr++;
-      dbg.add_points(pc_a->points[i], pc_b->points[j]);
-
-
-      
+      dbg.add_edge(pc_a->points[i], pc_b->points[j]);
       
     }
   }
@@ -439,10 +450,60 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr extract_euclidean_clusters(Pointcloud::Pt
 }
 
 
+double sq_L2_dist(Point const& a, Point const& b)
+{
+  return std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2) + std::pow(a.z - b.z, 2);
+}
 
-void growing_region()
+
+bool fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, const std::vector<int>& ctr_a,
+                    Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b, const std::vector<int>& ctr_b, int aa, int bb)
 {
 
+  Match_debugger dbg;
+  int count_matches = 0;
+  for (unsigned int i = 0; i < ctr_a.size(); ++i)
+  {
+    double min_dist = std::numeric_limits<double>::infinity();
+    int min_dist_idx = -1;
+    int idx_a = ctr_a[i];
+    for (unsigned int j = 0; j < ctr_b.size(); ++j)
+    {
+      int idx_b = ctr_b[j];
+      double d = sq_L2_dist(pc_a->points[idx_a], pc_b->points[idx_b]);
+      if (d < min_dist)
+      {
+        min_dist = d;
+        min_dist_idx = idx_b;
+      }
+    }
+
+
+    if (min_dist < 200.0)
+    {
+      Eigen::Vector3d na(normals_a->points[idx_a].normal_x, normals_a->points[idx_a].normal_y, normals_a->points[idx_a].normal_z);
+      Eigen::Vector3d nb(normals_b->points[min_dist_idx].normal_x, normals_b->points[min_dist_idx].normal_y, normals_b->points[min_dist_idx].normal_z);
+      na.normalize();
+      nb.normalize();
+      double dot_prod = na.dot(nb);
+      double angle_diff = 180 * std::acos(dot_prod) / PI;
+
+      if (angle_diff < 10 || angle_diff > 170)
+      {
+        dbg.add_edge(pc_a->points[idx_a], pc_b->points[min_dist_idx]);
+        count_matches++;
+      }
+    }
+  }
+
+  if (count_matches >= 10) {
+    dbg.add_raw_point_cloud(pc_a);
+    dbg.add_raw_point_cloud(pc_b);
+    dbg.save_obj("matches/match_" + std::to_string(aa) + "_" + std::to_string(bb) + ".obj");
+    return true;
+  }
+  else
+    return false; 
 }
 
 
@@ -510,7 +571,9 @@ int main(int argc, char* argv[])
    * 
    * 
    * 
-   * 
+   * ** further checking to validate a fusion:
+   *  - keep the "other" points and 
+   *  - sample points along the found connections and check that they are "very" close to some "other" points
    * 
    * */
 
@@ -542,10 +605,110 @@ int main(int argc, char* argv[])
   pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
 
 
+  std::vector<Pointcloud::Ptr> parts_pc; 
+  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> parts_normals;
+  std::vector<std::vector<int>> parts_boundaries;
+  for (unsigned int i = 0; i < clusters.size(); ++i)
+  {
+    auto& v = clusters[i];
+    if (v.indices.size() < 20) continue;
+    Pointcloud::Ptr p(new Pointcloud());
+    pcl::PointCloud<pcl::Normal>::Ptr norms(new pcl::PointCloud<pcl::Normal>());
+    p->resize(v.indices.size());
+    norms->resize(v.indices.size());
+    for (unsigned int j = 0; j < v.indices.size(); ++j)
+    {
+      p->points[j] = pc->points[v.indices[j]];
+      norms->points[j] = normals->points[v.indices[j]];
+    }
+    parts_pc.push_back(p);
+    parts_normals.push_back(norms);
+    auto [ctr, bounds] = detect_contour_points2(p, norms);
+    parts_boundaries.push_back(ctr);
+
+    //if (parts_pc.size()  > 2) break;
+  }
+
+
+  for (unsigned int i = 0; i < parts_pc.size(); ++i)
+  {
+    pcl::io::savePLYFile("parts/part_" + std::to_string(i) + ".ply", *parts_pc[i]);
+  }
+
+  const unsigned int n_parts = parts_pc.size();
+  std::vector<std::vector<int>> edges(n_parts, std::vector<int>());
+
+  for (unsigned int a = 0; a < n_parts; ++a)
+  {
+    for (unsigned int b = a+1; b < n_parts; ++b)
+    {
+      auto ret = fusion_attempt(parts_pc[a], parts_normals[a], parts_boundaries[a],
+                                parts_pc[b], parts_normals[b], parts_boundaries[b], a, b);
+      std::cout << a << " " << b << "\n";
+      if (ret)
+      {
+        edges[a].push_back(b);
+        edges[b].push_back(a);
+      }
+    }
+  }
+
+  // BFS to create groups in an efficient way
+  std::vector<int> groups(n_parts, -1);
+  int g = 0;
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+    if (groups[i] != -1) 
+      continue;
+    std::queue<int> q;
+    q.push(i);
+    while (!q.empty())
+    {
+      auto x = q.front();
+      q.pop();
+      if (groups[x] != -1)
+        continue;
+      groups[x] = g;
+      for (auto e : edges[x])
+      {
+        q.push(e);
+      }
+    }
+    ++g;
+  }
+
+  std::vector<unsigned char> groups_colors;
+  for (size_t i = 0; i < g; i++)
+  {
+    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  }
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_groups(new pcl::PointCloud<pcl::PointXYZRGB>());
+  for (int i = 0; i < n_parts; ++i)
+  {
+    int group_idx = groups[i];
+
+    for (unsigned int j = 0; j < parts_pc[i]->size(); ++j)
+    {
+      pcl::PointXYZRGB p;
+      p.x = parts_pc[i]->points[j].x;
+      p.y = parts_pc[i]->points[j].y;
+      p.z = parts_pc[i]->points[j].z;
+      p.r = groups_colors[group_idx * 3];
+      p.g = groups_colors[group_idx * 3 + 1];
+      p.b = groups_colors[group_idx * 3 + 2];
+      colored_groups->push_back(p);
+    }
+  }
+
+  pcl::io::savePLYFile("colored_groups.ply", *colored_groups);
+
+
   return 0;
-  auto mesh = triangulate(pc);
-  std::cout << "nb faces = " << mesh->polygons.size() << "\n";
-  pcl::io::savePLYFile("mesh.ply", *mesh);
+  // auto mesh = triangulate(pc);
+  // std::cout << "nb faces = " << mesh->polygons.size() << "\n";
+  // pcl::io::savePLYFile("mesh.ply", *mesh);
 
 
 
@@ -555,13 +718,13 @@ int main(int argc, char* argv[])
 //  std::cout << small_pc->size() << "\n";
 //  pcl::io::savePLYFile("filtered.ply", *pc);
 
-  auto [planar_pts, other_pts] = classify_points(pc, pc);
-  pcl::io::savePLYFile("planar_points.ply", *planar_pts);
-  pcl::io::savePLYFile("other_points.ply", *other_pts);
+  // auto [planar_pts, other_pts] = classify_points(pc, pc);
+  // pcl::io::savePLYFile("planar_points.ply", *planar_pts);
+  // pcl::io::savePLYFile("other_points.ply", *other_pts);
 
 
-  auto euclidean = extract_euclidean_clusters(planar_pts);
-  pcl::io::savePLYFile("euclidean_clusters.ply", *euclidean);
+  // auto euclidean = extract_euclidean_clusters(planar_pts);
+  // pcl::io::savePLYFile("euclidean_clusters.ply", *euclidean);
 /*
   auto [clusters, colored_pc] = segment_point_cloud(planar_pts);
   pcl::io::savePLYFile("colored_pc.ply", *colored_pc);
@@ -581,103 +744,103 @@ int main(int argc, char* argv[])
 
   /* ------ Process parts ------*/
 
-  std::vector<Pointcloud::Ptr> parts;
-  std::vector<std::string> parts_filenames;
-  for(auto& p: fs::recursive_directory_iterator("parts"))
-  {
-    if (p.path().extension().string() == ".obj")
-    {
-      parts_filenames.push_back(p.path().string());
-    }
-  }
+  // std::vector<Pointcloud::Ptr> parts;
+  // std::vector<std::string> parts_filenames;
+  // for(auto& p: fs::recursive_directory_iterator("parts"))
+  // {
+  //   if (p.path().extension().string() == ".obj")
+  //   {
+  //     parts_filenames.push_back(p.path().string());
+  //   }
+  // }
 
-  sort(parts_filenames.begin(), parts_filenames.end());
+  // sort(parts_filenames.begin(), parts_filenames.end());
 
-  for (auto const& f : parts_filenames)
-  {
-    Pointcloud::Ptr pc(new Pointcloud());
-    pcl::io::loadOBJFile(f, *pc);
-    parts.push_back(pc);
-  }
+  // for (auto const& f : parts_filenames)
+  // {
+  //   Pointcloud::Ptr pc(new Pointcloud());
+  //   pcl::io::loadOBJFile(f, *pc);
+  //   parts.push_back(pc);
+  // }
 
-  const int nb_parts = parts.size();
-  std::vector<Pointcloud::Ptr> parts_ctr(nb_parts);
-  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> parts_normal(nb_parts);
-  std::vector<pcl::PointCloud<pcl::Boundary>::Ptr> parts_boundaries(nb_parts);
-  for (int i = 0; i < nb_parts; ++i)
-  {
-    parts_normal[i] = compute_normals(parts[i]);
-    auto [ctr, bounds] = detect_contour_points2(parts[i], parts_normal[i]);
-    parts_ctr[i] = ctr;
-    parts_boundaries[i] = bounds;
-    pcl::io::savePLYFile("parts_ctr/parts_" + std::to_string(i) + ".ply", *parts_ctr[i]);
-  }
+  // const int nb_parts = parts.size();
+  // std::vector<Pointcloud::Ptr> parts_ctr(nb_parts);
+  // std::vector<pcl::PointCloud<pcl::Normal>::Ptr> parts_normal(nb_parts);
+  // std::vector<pcl::PointCloud<pcl::Boundary>::Ptr> parts_boundaries(nb_parts);
+  // for (int i = 0; i < nb_parts; ++i)
+  // {
+  //   parts_normal[i] = compute_normals(parts[i]);
+  //   auto [ctr, bounds] = detect_contour_points2(parts[i], parts_normal[i]);
+  //   parts_ctr[i] = ctr;
+  //   parts_boundaries[i] = bounds;
+  //   pcl::io::savePLYFile("parts_ctr/parts_" + std::to_string(i) + ".ply", *parts_ctr[i]);
+  // }
 
 
-  //int i = 3, j = 5;
-  //auto res = try_merge(parts[i], parts_normal[i], parts_boundaries[i],
-  //                     parts[j], parts_normal[j], parts_boundaries[j]);
-  //std::cout << "merge " << res << "\n";
+  // //int i = 3, j = 5;
+  // //auto res = try_merge(parts[i], parts_normal[i], parts_boundaries[i],
+  // //                     parts[j], parts_normal[j], parts_boundaries[j]);
+  // //std::cout << "merge " << res << "\n";
 
-  return 0;
+  // return 0;
 
-  std::vector<int> labels(nb_parts, -1);
+  // std::vector<int> labels(nb_parts, -1);
 
-  int a = 0;
-  for (int i = 1; i < nb_parts; ++i)
-  {
-    if (labels[i] == -1)
-    {
-      labels[i] = a++;      
-    }
-    for (int j = i+1; j < nb_parts; ++j)
-    {
+  // int a = 0;
+  // for (int i = 1; i < nb_parts; ++i)
+  // {
+  //   if (labels[i] == -1)
+  //   {
+  //     labels[i] = a++;      
+  //   }
+  //   for (int j = i+1; j < nb_parts; ++j)
+  //   {
 
-      std::cout << "Try merge parts " << i << " and " << j << "\n";
-      auto rep = try_merge(parts[i], parts_normal[i], parts_boundaries[i],
-                           parts[j], parts_normal[j], parts_boundaries[j]);
-      auto rep2 = try_merge(parts[j], parts_normal[j], parts_boundaries[j],
-                            parts[i], parts_normal[i], parts_boundaries[i]);
-      if (rep && rep2)
-      {
-        /*if (i == 1 && j == 17 || i == 3 && j == 27 || i == 1 && j == 28 || i == 1 && j == 58 || i == 2 && j == 17 || i == 9 && j == 37 || i == 10 && j == 15 ||
-        i == 24 && j == 25 || i == 24 && j == 26)
-          continue;
-        else
-          return 0;
-        */  
-        if (labels[j] == -1)
-        {
-          labels[j] = labels[i];
-        }
-        else
-        {
-          for (auto& x : labels)
-          {
-            if (x == labels[j])
-              x = labels[i];
-          }
-        }
-      }
-    }
-  }
+  //     std::cout << "Try merge parts " << i << " and " << j << "\n";
+  //     auto rep = try_merge(parts[i], parts_normal[i], parts_boundaries[i],
+  //                          parts[j], parts_normal[j], parts_boundaries[j]);
+  //     auto rep2 = try_merge(parts[j], parts_normal[j], parts_boundaries[j],
+  //                           parts[i], parts_normal[i], parts_boundaries[i]);
+  //     if (rep && rep2)
+  //     {
+  //       /*if (i == 1 && j == 17 || i == 3 && j == 27 || i == 1 && j == 28 || i == 1 && j == 58 || i == 2 && j == 17 || i == 9 && j == 37 || i == 10 && j == 15 ||
+  //       i == 24 && j == 25 || i == 24 && j == 26)
+  //         continue;
+  //       else
+  //         return 0;
+  //       */  
+  //       if (labels[j] == -1)
+  //       {
+  //         labels[j] = labels[i];
+  //       }
+  //       else
+  //       {
+  //         for (auto& x : labels)
+  //         {
+  //           if (x == labels[j])
+  //             x = labels[i];
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
-  std::unordered_set<int> labels_set(labels.begin(), labels.end());
-  std::unordered_map<int, Pointcloud::Ptr> parts_map;
-  for (auto l : labels_set)
-  {
-    parts_map[l].reset(new Pointcloud());
-  }
+  // std::unordered_set<int> labels_set(labels.begin(), labels.end());
+  // std::unordered_map<int, Pointcloud::Ptr> parts_map;
+  // for (auto l : labels_set)
+  // {
+  //   parts_map[l].reset(new Pointcloud());
+  // }
 
-  for (int i = 1; i < nb_parts; ++i)
-  {
-    *(parts_map[labels[i]]) += *(parts[i]);
-  }
+  // for (int i = 1; i < nb_parts; ++i)
+  // {
+  //   *(parts_map[labels[i]]) += *(parts[i]);
+  // }
 
-  for (auto v : parts_map)
-  {
-    pcl::io::savePLYFile("out/out_" + std::to_string(v.first) + ".ply", *v.second);
-  }
+  // for (auto v : parts_map)
+  // {
+  //   pcl::io::savePLYFile("out/out_" + std::to_string(v.first) + ".ply", *v.second);
+  // }
 
-  return 0;
+  // return 0;
 }
