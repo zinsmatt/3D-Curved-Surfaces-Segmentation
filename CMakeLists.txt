@@ -27,6 +27,7 @@ find_package(PCL REQUIRED)
 
 
 add_definitions(${PCL_DEFINITIONS})
+add_definitions("-DHAVE_QHULL")
 
 
 add_executable(${PROJECT_NAME}
@@ -38,7 +39,7 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    ${PCL_LIBRARIES}
+    ${PCL_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_KDTREE_LIBRARY} ${PCL_SEARCH_LIBRARY} ${PCL_SURFACE_LIBRARY} ${PCL_FEATURES_LIBRARY}
     Eigen3::Eigen
     stdc++fs
     )

@@ -31,6 +31,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/obj_io.h>
 #include <pcl/io/ply_io.h>
+#include <pcl/io/pcd_io.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/search/search.h>
 #include <pcl/search/kdtree.h>
@@ -39,8 +40,10 @@
 #include <pcl/features/boundary.h>
 #include <pcl/surface/mls.h>
 #include <pcl/surface/gp3.h>
+#include <pcl/surface/marching_cubes_rbf.h>
 #include <pcl/segmentation/extract_clusters.h>
-
+#include <pcl/surface/concave_hull.h>
+#include <pcl/surface/poisson.h>
 #include <Eigen/Dense>
 
 #define PI 3.14159265359
@@ -384,6 +387,26 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc)
   return mls_points;
 }
 
+Pointcloud::Ptr smooth_point_cloud2(Pointcloud::Ptr pc)
+{
+  // Create a KD-Tree
+  pcl::search::KdTree<Point>::Ptr tree (new pcl::search::KdTree<Point>);
+  Pointcloud::Ptr mls_points(new Pointcloud());
+  // Init object (second point type is for the normals, even if unused)
+  pcl::MovingLeastSquares<Point, Point> mls;
+  //mls.setComputeNormals(true);
+  mls.setInputCloud(pc);
+  mls.setPolynomialOrder(2);
+  mls.setSearchMethod(tree);
+  mls.setNumberOfThreads(8);
+  mls.setPolynomialFit(true);
+  mls.setPointDensity(50);
+  mls.setSqrGaussParam(2.0);
+  mls.setSearchRadius(10.0);
+  // Reconstruct
+  mls.process (*mls_points);
+  return mls_points;
+}
 
 auto triangulate(Pointcloud::Ptr pc)
 {
@@ -399,10 +422,10 @@ auto triangulate(Pointcloud::Ptr pc)
     pcl::PolygonMesh::Ptr triangles(new pcl::PolygonMesh());
 
     //Max distance between connecting edge points
-    gp.setSearchRadius(5);
-    gp.setMu(1);
-    gp.setMaximumNearestNeighbors(10);
-    gp.setMaximumSurfaceAngle(M_PI/8); // 45 degrees
+    gp.setSearchRadius(6);
+    gp.setMu(2);
+    gp.setMaximumNearestNeighbors(20);
+    gp.setMaximumSurfaceAngle(1.5*M_PI/8); // 45 degrees
     gp.setMinimumAngle(M_PI/18); // 10 degrees
     gp.setMaximumAngle(2*M_PI/3); // 120 degrees
     gp.setNormalConsistency(false);
@@ -412,6 +435,15 @@ auto triangulate(Pointcloud::Ptr pc)
     gp.setSearchMethod(tree);
     gp.reconstruct(*triangles);
     return triangles;
+
+
+    // pcl::MarchingCubesRBF<pcl::PointNormal> mc;
+    // mc.setInputCloud(pc_with_normals);
+    // mc.setGridResolution(50, 50, 50);
+    // mc.setSearchMethod(tree);
+    // mc.reconstruct(*triangles);
+    // return triangles;
+
 }
 
 pcl::PointCloud<pcl::PointXYZRGB>::Ptr extract_euclidean_clusters(Pointcloud::Ptr pc)
@@ -456,10 +488,12 @@ double sq_L2_dist(Point const& a, Point const& b)
 }
 
 
-bool fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, const std::vector<int>& ctr_a,
-                    Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b, const std::vector<int>& ctr_b, int aa, int bb)
+std::pair<bool, std::vector<std::pair<int, int>>> 
+fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, const std::vector<int>& ctr_a,
+               Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b, const std::vector<int>& ctr_b, int aa, int bb)
 {
-
+  std::cout << "size pc vs normals " << pc_a->size() << " - " << normals_a->size() << "\n";
+  std::vector<std::pair<int, int>> links;
   Match_debugger dbg;
   int count_matches = 0;
   for (unsigned int i = 0; i < ctr_a.size(); ++i)
@@ -491,21 +525,193 @@ bool fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr norm
       if (angle_diff < 10 || angle_diff > 170)
       {
         dbg.add_edge(pc_a->points[idx_a], pc_b->points[min_dist_idx]);
+        links.push_back({idx_a, min_dist_idx});
         count_matches++;
       }
     }
   }
-
+  std::cout << "matches = " << count_matches << "\n";
   if (count_matches >= 10) {
     dbg.add_raw_point_cloud(pc_a);
     dbg.add_raw_point_cloud(pc_b);
     dbg.save_obj("matches/match_" + std::to_string(aa) + "_" + std::to_string(bb) + ".obj");
-    return true;
+    return {true, links};
   }
   else
-    return false; 
+    return {false, links}; 
 }
 
+
+
+
+Eigen::Vector3d pca(Pointcloud::Ptr pc)
+{
+  const unsigned int n_points = pc->size();
+  Eigen::Matrix<double, Eigen::Dynamic, 3> pts(n_points, 3);
+  Eigen::Vector3d center(0.0, 0.0, 0.0);
+  for (unsigned int j = 0; j < n_points; ++j)
+  {
+    pts(j, 0) = pc->points[j].x;
+    pts(j, 1) = pc->points[j].y;
+    pts(j, 2) = pc->points[j].z;
+    center += pts.row(j);
+  }
+  center /= n_points;
+  pts = pts.rowwise() - center.transpose();
+  Eigen::Matrix3d mat = (1.0 / n_points) * pts.transpose() * pts;
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd(mat);
+  Eigen::Vector3d eig_vals = svd.singularValues();
+  std::sort(eig_vals.data(), eig_vals.data() + eig_vals.size(), std::greater<double>());
+  return eig_vals;
+}
+
+
+void saveTS(const std::string& filename, Pointcloud::Ptr pc, const std::vector<pcl::Vertices>& faces)
+{
+  std::ofstream file(filename);
+  for (unsigned int i = 0; i < pc->size(); ++i)
+  {
+    file << "VRTX " << i+1 << " " << pc->points[i].x << " " << pc->points[i].y << " " << pc->points[i].z << "\n";
+  }
+
+  for (auto& f : faces)
+  {
+    if (f.vertices.size() != 3)
+        std::cout << f.vertices.size() << "\n";
+    file << "TRGL " << f.vertices[0]+1 << " " << f.vertices[1]+1 << " " << f.vertices[2]+1 << "\n";
+  }
+
+  file.close();
+}
+
+void interpolate_meshes(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, 
+                        Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b,
+                        const std::vector<std::pair<int, int>>& links)
+{
+  unsigned int nb = 10;
+  for (auto& p : links)
+  {
+    auto a = p.first;
+    auto b = p.second;
+    const auto& pa = pc_a->points[a];
+    const auto& pb = pc_b->points[b];
+
+    const auto& na = normals_a->points[a];
+
+    double dx = pa.x - pb.x;
+    double dy = pa.y - pb.y;
+    double dz = pa.z - pb.z;
+
+    double d = std::sqrt(dx * dx + dy * dy + dz * dz);
+    dx /= nb;
+    dy /= nb;
+    dz /= nb;
+
+    for (int i = 1 ; i < nb; ++i)
+    {
+      auto x = pb.x + i * dx;
+      auto y = pb.y + i * dy;
+      auto z = pb.z + i * dz;
+
+      pc_a->push_back(Point(x, y, z));
+      normals_a->push_back(na);
+    }
+    // TODO interpolte normal
+  }
+
+}
+                        
+std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ctr)
+{
+  int idx = 0;
+  std::vector<int> order;
+  std::vector<bool> done(ctr.size(), false);
+  for (unsigned int k = 0; k < ctr.size(); ++k)
+  {
+    double sq_min_dist = std::numeric_limits<double>::infinity();
+    unsigned int sq_min_dist_idx = -1;
+    for (unsigned int i = 0; i < ctr.size(); ++i)
+    {
+      if (i != idx && !done[i])
+      {
+        auto d = sq_L2_dist(pc->points[ctr[idx]], pc->points[ctr[i]]);
+        if (d < sq_min_dist)
+        {
+          sq_min_dist = d;
+          sq_min_dist_idx = i;
+        }
+      }
+    }
+    order.push_back(ctr[idx]);
+    done[idx] = true;
+    idx = sq_min_dist_idx;
+    if (idx == -1)
+      break;
+  }
+  if (order.size() < 0.8 * ctr.size())
+  {
+    std::cerr << "Warning; order contour < 0.8 contour" << std::endl;
+  }
+
+  return order;
+}
+
+Pointcloud::Ptr densify_contour(Pointcloud::Ptr pc, std::vector<int>& ctr, pcl::PointCloud<pcl::Normal>::Ptr normals)
+{
+  int idx = pc->size();
+  Pointcloud::Ptr ctr_pc(new Pointcloud());
+  int j = 0;
+  //std::cout << "densify "<< ctr.size() << "\n";
+  std::vector<int> new_ctr;
+  for (unsigned int i = 0; i < ctr.size(); ++i)
+  {
+    //std::cout << i << " / " << ctr.size() << "\n";
+    unsigned int i2 = (i+1) % ctr.size();
+    Eigen::Vector3d a(pc->points[ctr[i]].x, pc->points[ctr[i]].y, pc->points[ctr[i]].z);
+    Eigen::Vector3d b(pc->points[ctr[i2]].x, pc->points[ctr[i2]].y, pc->points[ctr[i2]].z);
+    ctr_pc->push_back(pc->points[ctr[i]]);
+    ctr_pc->push_back(pc->points[ctr[i2]]);
+
+    if (sq_L2_dist(pc->points[ctr[i]], pc->points[ctr[i2]]) > 4.0)
+     continue;
+    Eigen::Vector3d d = b - a;
+    d /= 10;
+    for (int k = 1; k < 10; ++k)
+    {
+      Eigen::Vector3d p = a + k * d;
+      pc->push_back(Point(p[0], p[1], p[2]));
+      normals->push_back(normals->points[ctr[i]]);
+      ctr_pc->push_back(Point(p[0], p[1], p[2]));
+      new_ctr.push_back(k++);
+    }
+  }
+  ctr.insert(ctr.end(), new_ctr.begin(), new_ctr.end());
+  return ctr_pc;
+}
+
+Pointcloud::Ptr smooth_contour(Pointcloud::Ptr pc, const std::vector<int>& ctr)
+{
+  // Pointcloud::Ptr ctr_pc(new Pointcloud());
+  // ctr_pc->resize(ctr.size());
+  // for (unsigned int i = 0; i < ctr.size(); ++i)
+  // { 
+  //   ctr_pc->points[i] = pc->points[ctr[i]];
+  // }
+
+  Pointcloud::Ptr smooth_ctr(new Pointcloud());
+  pcl::MovingLeastSquares<Point, Point> mls;
+  mls.setComputeNormals(true);
+  mls.setInputCloud(pc);
+  mls.setPolynomialOrder(2);
+   mls.setPolynomialFit(true);
+  mls.setPointDensity(10);
+  mls.setSqrGaussParam(4.0);
+  mls.setSearchRadius(10.0);
+  mls.process (*smooth_ctr);
+
+
+  return smooth_ctr;
+}
 
 int main(int argc, char* argv[])
 {
@@ -525,6 +731,8 @@ int main(int argc, char* argv[])
 
   auto smoothed_pc = smooth_point_cloud(pc);
   pcl::io::savePLYFile("smoothed.ply", *smoothed_pc);
+  Pointcloud::Ptr init_pc(new Pointcloud());
+  *init_pc = *pc;
   pc = smoothed_pc;
 
 
@@ -626,13 +834,41 @@ int main(int argc, char* argv[])
     auto [ctr, bounds] = detect_contour_points2(p, norms);
     parts_boundaries.push_back(ctr);
 
-    //if (parts_pc.size()  > 2) break;
+
+    Pointcloud::Ptr ctr_pc(new Pointcloud());
+    for (auto k : ctr)
+    {
+      ctr_pc->push_back(p->points[k]);
+    }
+    pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + ".ply", *ctr_pc);
+
+    // pcl::io::savePCDFile("parts_hull/part_" + std::to_string(i) + ".pcd", *p);
   }
 
+
+
+
+
+
+
+
+
+// Process contours (define order + densify)
 
   for (unsigned int i = 0; i < parts_pc.size(); ++i)
   {
     pcl::io::savePLYFile("parts/part_" + std::to_string(i) + ".ply", *parts_pc[i]);
+
+    auto ordered_ctr = organize_contour(parts_pc[i], parts_boundaries[i]);
+    std::cout << "after organize contour " << std::endl;
+    std::cout << "size contour = " << ordered_ctr.size() << "\n";
+    auto dense_ctr = densify_contour(parts_pc[i], ordered_ctr, parts_normals[i]);
+    parts_boundaries[i] = ordered_ctr;
+    std::cout << "after denser " << parts_boundaries[i].size() << "\n";
+    pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + "_dense.ply", *dense_ctr);
+    //auto smooth_ctr = smooth_contour(dense_ctr, ordered_ctr);
+    //pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + "_smooth.ply", *smooth_ctr);
+
   }
 
   const unsigned int n_parts = parts_pc.size();
@@ -642,9 +878,10 @@ int main(int argc, char* argv[])
   {
     for (unsigned int b = a+1; b < n_parts; ++b)
     {
-      auto ret = fusion_attempt(parts_pc[a], parts_normals[a], parts_boundaries[a],
-                                parts_pc[b], parts_normals[b], parts_boundaries[b], a, b);
+      auto [ret, links] = fusion_attempt(parts_pc[a], parts_normals[a], parts_boundaries[a],
+                                         parts_pc[b], parts_normals[b], parts_boundaries[b], a, b);
       std::cout << a << " " << b << "\n";
+      interpolate_meshes(parts_pc[a], parts_normals[a], parts_pc[b], parts_normals[b], links);
       if (ret)
       {
         edges[a].push_back(b);
@@ -652,6 +889,34 @@ int main(int argc, char* argv[])
       }
     }
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // BFS to create groups in an efficient way
   std::vector<int> groups(n_parts, -1);
@@ -705,7 +970,77 @@ int main(int argc, char* argv[])
   pcl::io::savePLYFile("colored_groups.ply", *colored_groups);
 
 
+  std::vector<Pointcloud::Ptr> groups_pc(g, nullptr);
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+    int gr = groups[i];
+    if (!groups_pc[gr])
+      groups_pc[gr].reset(new Pointcloud());
+
+    *groups_pc[gr] += *parts_pc[i];
+  }
+
+  for (unsigned int i = 0; i < groups_pc.size(); ++i)
+  {
+    Eigen::Vector3d eig_vals = pca(groups_pc[i]);
+    if (eig_vals[0] >= 100)
+    {
+      auto smooth_pc = smooth_point_cloud2(groups_pc[i]);
+      auto mesh = triangulate(smooth_pc);
+      pcl::io::savePLYFile("groups/group_" + std::to_string(i) + ".ply", *groups_pc[i]);
+      pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + ".obj", *mesh);
+      saveTS("groups_ts/group_" + std::to_string(i) + ".ts", smooth_pc, mesh->polygons);
+    }
+    else 
+    {
+      std::cout << "Ignore group: too small\n";
+    }
+  }
+
+
   return 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   // auto mesh = triangulate(pc);
   // std::cout << "nb faces = " << mesh->polygons.size() << "\n";
   // pcl::io::savePLYFile("mesh.ply", *mesh);
