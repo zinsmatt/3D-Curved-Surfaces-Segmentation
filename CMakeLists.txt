@@ -24,22 +24,45 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
+find_package(VTK REQUIRED)
+include(${VTK_USE_FILE})
 
 
 add_definitions(${PCL_DEFINITIONS})
-add_definitions("-DHAVE_QHULL")
+#add_definitions("-DHAVE_QHULL")
 
 
 add_executable(${PROJECT_NAME}
     main.cxx
     )
 
+
+
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     ${PCL_INCLUDE_DIRS}
+    ${VTK_INCLUDE_DIRS}
     )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${PCL_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_KDTREE_LIBRARY} ${PCL_SEARCH_LIBRARY} ${PCL_SURFACE_LIBRARY} ${PCL_FEATURES_LIBRARY}
+    ${VTK_LIBRARIES}
     Eigen3::Eigen
     stdc++fs
     )
+
+
+add_executable(Test
+    test.cxx
+)
+target_include_directories(Test SYSTEM PRIVATE
+    ${PCL_INCLUDE_DIRS}
+    ${VTK_INCLUDE_DIRS}
+)
+    
+target_link_libraries(Test PRIVATE
+    ${PCL_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_KDTREE_LIBRARY} ${PCL_SEARCH_LIBRARY} ${PCL_SURFACE_LIBRARY} ${PCL_FEATURES_LIBRARY}
+    ${VTK_LIBRARIES}
+    Eigen3::Eigen
+    stdc++fs
+)
+    

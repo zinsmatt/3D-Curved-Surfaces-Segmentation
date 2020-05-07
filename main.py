@@ -9,12 +9,12 @@ import numpy as np
 from mesh_io import write_obj, read_ply
 
         
-data = segyio.tools.cube('/home/matt/dev/Seismic_3D_Volume/training/inputs/t08.sgy')
+data = segyio.tools.cube('/home/matt/dev/Seismic_3D_Volume/training/inputs/t01.sgy')
 dim_z, dim_y, dim_x = data.shape
 
 
 
-x, y, z = np.where(data > 0.7)
+y, x, z = np.where(data > 0.7)
 pts = np.vstack((x.flatten(), y.flatten(), z.flatten())).T
 
 write_obj("out.obj", pts)
@@ -48,7 +48,7 @@ for i in range(nb_clusters):
 #%% GT meshes
 import os
 import glob
-num = 2
+num = 1
 filenames = glob.glob("/home/matt/dev/Seismic_3D_Volume/training/ground_truth/t%02d/*.ts" % num)
 n_files = len(filenames)
 
