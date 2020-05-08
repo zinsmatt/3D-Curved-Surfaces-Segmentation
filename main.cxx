@@ -1163,11 +1163,27 @@ int main(int argc, char* argv[])
   srand (time(NULL));
   pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);
 
+  std::string input_file("../out.obj");
+  std::string output_folder("groups_ts/");
+  if (argc > 1)
+  {
+    input_file = std::string(argv[1]);
+  }
+  if (argc > 2)
+  {
+    output_folder = std::string(argv[2]);
+    if (output_folder[output_folder.size()-1] != '/')
+      output_folder += '/';
+
+  }
+  std::cout << "Process " << input_file << std::endl;
+  std::cout << "Output folder = " << output_folder << std::endl;
+
   
   /* ---- Keep only planar points ------ */
   
   Pointcloud::Ptr pc(new Pointcloud());
-  if (pcl::io::loadOBJFile("../out.obj", *pc) != 0)
+  if (pcl::io::loadOBJFile(input_file, *pc) != 0)
   {
     throw std::runtime_error("Could not load point cloud");
   }
@@ -1496,30 +1512,33 @@ int main(int argc, char* argv[])
       voxelGridFilter(groups_pc[i], 3.0);
       auto smooth_pc = smooth_point_cloud2(groups_pc[i]);
       
-      vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
-      auto points = vtkSmartPointer<vtkPoints>::New();
-      points->SetNumberOfPoints(smooth_pc->size());
-      for (unsigned int j = 0; j < smooth_pc->size(); ++j)
-      {
-        points->SetPoint(j, smooth_pc->points[j].x, smooth_pc->points[j].y, smooth_pc->points[j].z);
-      }
-      pd->SetPoints(points);
+      // vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+      // auto points = vtkSmartPointer<vtkPoints>::New();
+      // points->SetNumberOfPoints(smooth_pc->size());
+      // for (unsigned int j = 0; j < smooth_pc->size(); ++j)
+      // {
+      //   points->SetPoint(j, smooth_pc->points[j].x, smooth_pc->points[j].y, smooth_pc->points[j].z);
+      // }
+      // pd->SetPoints(points);
 
-      auto delaunay3d = vtkSmartPointer<vtkDelaunay3D>::New();
-      delaunay3d->SetInputData(pd);
-      //delaunay3d->SetAlpha(5.0);
-      //delaunay3d->SetOffset(1.0);
-      //delaunay3d->SetAlphaTets(false);
-      //delaunay3d->SetAlphaLines(false);
-      //delaunay3d->SetAlphaTris(false);
+      // auto delaunay3d = vtkSmartPointer<vtkDelaunay3D>::New();
+      // delaunay3d->SetInputData(pd);
+      // //delaunay3d->SetAlpha(5.0);
+      // //delaunay3d->SetOffset(1.0);
+      // //delaunay3d->SetAlphaTets(false);
+      // //delaunay3d->SetAlphaLines(false);
+      // //delaunay3d->SetAlphaTris(false);
 
-      auto converter = vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
-      converter->SetInputConnection(delaunay3d->GetOutputPort());
+      // auto converter = vtkSmartPointer<vtkDataSetSurfaceFilter>::New();
+      // converter->SetInputConnection(delaunay3d->GetOutputPort());
 
-      auto writer = vtkSmartPointer<vtkOBJWriter>::New();
-      writer->SetFileName(("groups_meshes/group_" + std::to_string(i) + ".obj").c_str());
-      writer->SetInputConnection(converter->GetOutputPort());
-      writer->Write();
+      // auto writer = vtkSmartPointer<vtkOBJWriter>::New();
+      // writer->SetFileName(("groups_meshes/group_" + std::to_string(i) + ".obj").c_str());
+      // writer->SetInputConnection(converter->GetOutputPort());
+      // writer->Write();
+
+
+
 
       pcl::io::savePLYFile("groups_meshes/group_" + std::to_string(i) + "_smooth_pc.ply", *smooth_pc);
 
@@ -1586,7 +1605,7 @@ int main(int argc, char* argv[])
 
       //pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + ".obj", *mesh);
       //pcl::io::savePLYFile("groups_meshes/group_" + std::to_string(i) + "_smooth_pc.ply", *smooth_with_normals);
-      saveTS("groups_ts/group_" + std::to_string(i) + ".ts", smooth_pc, manifold_faces);
+      saveTS(output_folder + "group_" + std::to_string(i) + ".ts", smooth_pc, manifold_faces);
 
 
     }
