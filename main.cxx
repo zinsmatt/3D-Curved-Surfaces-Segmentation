@@ -44,7 +44,7 @@
 #include <pcl/surface/marching_cubes_hoppe.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/surface/concave_hull.h>
-#include <pcl/surface/poisson.h>
+#include <pcl/surface/grid_projection.h>
 //#include <pcl/surface/on_nurbs/fitting_curve_pdm.h>
 //#include <pcl/surface/on_nurbs/triangulation.h>
 
@@ -560,7 +560,7 @@ fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a
       }
     }
   }
-  std::cout << "matches = " << count_matches << "\n";
+  //std::cout << "matches = " << count_matches << "\n";
   if (count_matches >= 10) {
     dbg.add_raw_point_cloud(pc_a);
     dbg.add_raw_point_cloud(pc_b);
@@ -1157,6 +1157,31 @@ void saveOBJ(const std::string& filename, Pointcloud::Ptr pc, const std::vector<
 
 
 
+std::vector<pcl::Vertices> force_triangular_faces(Pointcloud::Ptr pc, const std::vector<pcl::Vertices>& quad_faces)
+{
+  std::vector<pcl::Vertices> triangles(quad_faces.size() * 2);
+  for (unsigned int i = 0; i < quad_faces.size(); ++i)
+  {
+    const auto& quad = quad_faces[i].vertices;
+    double d1 = sq_L2_dist(pc->points[quad[0]], pc->points[quad[2]]);
+    double d2 = sq_L2_dist(pc->points[quad[1]], pc->points[quad[3]]);
+    pcl::Vertices f1;
+    pcl::Vertices f2;
+    if (d1 > d2)
+    {
+      f1.vertices = {quad[0], quad[1], quad[3]};
+      f2.vertices = {quad[1], quad[2], quad[3]};
+    }
+    else
+    {
+      f1.vertices = {quad[0], quad[1], quad[2]};
+      f2.vertices = {quad[2], quad[3], quad[0]};
+    }
+    triangles[i*2] = f1;
+    triangles[i*2+1] = f2;
+  }
+  return triangles;
+}
 
 int main(int argc, char* argv[])
 {
@@ -1410,7 +1435,7 @@ int main(int argc, char* argv[])
   {
     for (unsigned int b = a+1; b < n_parts; ++b)
     {
-      std::cout << a << " " << b << "\n";
+      //std::cout << a << " " << b << "\n";
       auto [ret1, links1] = fusion_attempt(contours_pc[a], contours_normals[a], contours_trees[a],
                                          contours_pc[b], contours_normals[b], contours_trees[b], a, b);
       auto [ret2, links2] = fusion_attempt(contours_pc[b], contours_normals[b], contours_trees[b],
@@ -1511,7 +1536,7 @@ int main(int argc, char* argv[])
     {
       voxelGridFilter(groups_pc[i], 3.0);
       auto smooth_pc = smooth_point_cloud2(groups_pc[i]);
-      
+      std::cout << "triangulation group " << i << std::endl;
       // vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
       // auto points = vtkSmartPointer<vtkPoints>::New();
       // points->SetNumberOfPoints(smooth_pc->size());
@@ -1542,7 +1567,7 @@ int main(int argc, char* argv[])
 
       pcl::io::savePLYFile("groups_meshes/group_" + std::to_string(i) + "_smooth_pc.ply", *smooth_pc);
 
-
+    std::cout << "saved " << "groups_meshes/group_" + std::to_string(i) + "_smooth_pc.ply" << std::endl;
       //pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
       //pcl::io::loadOBJFile("groups_meshes/group_" + std::to_string(i) + ".obj", *mesh);
 
@@ -1551,20 +1576,43 @@ int main(int argc, char* argv[])
       pcl::PointCloud<pcl::PointNormal>::Ptr smooth_pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
       pcl::concatenateFields(*smooth_pc, *smooth_pc_normals, *smooth_pc_with_normals);
 
-      pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
-      pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp;
-      gp.setInputCloud(smooth_pc_with_normals);
-      gp.setMu(2.0);
-      gp.setSearchRadius(10.0);
-      gp.reconstruct(*mesh);
+//       pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
+//       pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp;
+//       gp.setInputCloud(smooth_pc_with_normals);
+//       gp.setMu(2.0);
+//       gp.setSearchRadius(10.0);
+//       gp.reconstruct(*mesh);
 
 
-      auto cleaned_faces = clean_mesh(smooth_pc, mesh->polygons);
-      auto manifold_faces = remove_non_manifold_faces(smooth_pc, cleaned_faces);
-      // pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", *mesh);
-      saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", smooth_pc, manifold_faces);
+//       auto cleaned_faces = clean_mesh(smooth_pc, mesh->polygons);
+//       auto manifold_faces = remove_non_manifold_faces(smooth_pc, cleaned_faces);
+//       // pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", *mesh);
+//       //saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", smooth_pc, manifold_faces);
 
-      analyze_non_manifold_edges(manifold_faces);
+// //      analyze_non_manifold_edges(manifold_faces);
+
+
+
+
+
+      pcl::PolygonMesh::Ptr mesh2(new pcl::PolygonMesh());
+      pcl::search::KdTree<pcl::PointNormal>::Ptr tree(new pcl::search::KdTree<pcl::PointNormal>());
+      tree->setInputCloud(smooth_pc_with_normals);
+      pcl::GridProjection<pcl::PointNormal> gp2;
+      gp2.setInputCloud(smooth_pc_with_normals);
+      gp2.setResolution(0.01);
+      gp2.setPaddingSize(3);
+      gp2.setMaxBinarySearchLevel(5);
+      gp2.setSearchMethod(tree);
+      gp2.reconstruct(*mesh2);
+
+      Pointcloud::Ptr tmp(new Pointcloud());
+      pcl::fromPCLPointCloud2(mesh2->cloud, *tmp);
+
+      auto triangles = force_triangular_faces(tmp, mesh2->polygons);
+      mesh2->polygons = triangles;
+      saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", tmp, mesh2->polygons);
+
 
 
 
@@ -1605,7 +1653,8 @@ int main(int argc, char* argv[])
 
       //pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + ".obj", *mesh);
       //pcl::io::savePLYFile("groups_meshes/group_" + std::to_string(i) + "_smooth_pc.ply", *smooth_with_normals);
-      saveTS(output_folder + "group_" + std::to_string(i) + ".ts", smooth_pc, manifold_faces);
+      // saveTS(output_folder + "group_" + std::to_string(i) + ".ts", smooth_pc, manifold_faces);
+      saveTS(output_folder + "group_" + std::to_string(i) + ".ts", tmp, mesh2->polygons);
 
 
     }
