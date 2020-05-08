@@ -23,5 +23,3 @@ for f in files:
     # os.system(" ".join(cmd))
     # subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                
-               
-
