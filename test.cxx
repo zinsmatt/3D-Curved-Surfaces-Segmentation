@@ -1086,50 +1086,88 @@ std::vector<pcl::Vertices> force_triangular_faces(Pointcloud::Ptr pc, const std:
   return triangles;
 }
 
+
+
+
+
+
+
+Eigen::Vector3d pca_axes(Pointcloud::Ptr pc)
+{
+  const unsigned int n_points = pc->size();
+  Eigen::Matrix<double, Eigen::Dynamic, 3> pts(n_points, 3);
+  Eigen::Vector3d center(0.0, 0.0, 0.0);
+  for (unsigned int j = 0; j < n_points; ++j)
+  {
+    pts(j, 0) = pc->points[j].x;
+    pts(j, 1) = pc->points[j].y;
+    pts(j, 2) = pc->points[j].z;
+    center += pts.row(j);
+  }
+  center /= n_points;
+  pts = pts.rowwise() - center.transpose();
+  Eigen::Matrix3d mat = (1.0 / n_points) * pts.transpose() * pts;
+
+  Eigen::EigenSolver<Eigen::Matrix3d> eig(mat);
+  Eigen::Vector3d eig_vals = eig.eigenvalues().real();
+  std::sort(eig_vals.data(), eig_vals.data() + eig_vals.size(), std::greater<double>());
+  Eigen::Vector3d axes = eig_vals.cwiseSqrt();
+  return 4 * axes;  // 2 times for the diameter and 2 times for 2 stddev
+}
+
 int main(int argc, char* argv[])
 {
-  srand (time(NULL));
-  pcl::console::setVerbosityLevel(pcl::console::L_DEBUG);
-
-
-  Pointcloud::Ptr pc(new Pointcloud());
-  pcl::io::loadPLYFile("groups_meshes/group_0_smooth_pc.ply", *pc);
-    std::cout << pc->size() << "\n";
-  auto pc_normals = compute_normals(pc);
-  pcl::PointCloud<pcl::PointNormal>::Ptr pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
-  pcl::concatenateFields(*pc, *pc_normals, *pc_with_normals);
-
-
   pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
+  pcl::io::loadOBJFile("/home/matt/dev/Seismic_3D_Volume/build/groups_meshes/group_107_clean_mesh.obj", *mesh);
+  Pointcloud::Ptr pc(new Pointcloud());
+  pcl::fromPCLPointCloud2(mesh->cloud, *pc);
 
-  pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp;
-  gp.setInputCloud(pc_with_normals);
-  gp.setMu(2.0);
-  gp.setSearchRadius(10.0);
-  gp.reconstruct(*mesh);
+  Eigen::Vector3d axes = pca_axes(pc);
+  std::cout << "axes = " << axes.transpose() << "\n";
 
-  pcl::PolygonMesh::Ptr mesh2(new pcl::PolygonMesh());
-  pcl::search::KdTree<pcl::PointNormal>::Ptr tree(new pcl::search::KdTree<pcl::PointNormal>());
-  tree->setInputCloud(pc_with_normals);
-  pcl::GridProjection<pcl::PointNormal> gp2;
-  gp2.setInputCloud(pc_with_normals);
-  gp2.setResolution(0.01);
-  gp2.setPaddingSize(3);
-  gp2.setMaxBinarySearchLevel(5);
-  gp2.setSearchMethod(tree);
-  gp2.reconstruct(*mesh2);
 
-  std::cout << mesh->polygons.size() << "\n";
-  std::cout << mesh2->polygons.size() << "\n";
+  // srand (time(NULL));
+  // pcl::console::setVerbosityLevel(pcl::console::L_DEBUG);
 
-  Pointcloud::Ptr tmp(new Pointcloud());
-  pcl::fromPCLPointCloud2(mesh2->cloud, *tmp);
 
-  auto triangles = force_triangular_faces(tmp, mesh2->polygons);
-  mesh2->polygons = triangles;
-  std::cout << pc_with_normals->size() << " " << tmp->size() << "\n";
-  pcl::io::saveOBJFile("mesh_test.obj", *mesh);
-  pcl::io::saveOBJFile("mesh_test2.obj", *mesh2);
+  // Pointcloud::Ptr pc(new Pointcloud());
+  // pcl::io::loadPLYFile("groups_meshes/group_0_smooth_pc.ply", *pc);
+  //   std::cout << pc->size() << "\n";
+  // auto pc_normals = compute_normals(pc);
+  // pcl::PointCloud<pcl::PointNormal>::Ptr pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+  // pcl::concatenateFields(*pc, *pc_normals, *pc_with_normals);
+
+
+  // pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
+
+  // pcl::GreedyProjectionTriangulation<pcl::PointNormal> gp;
+  // gp.setInputCloud(pc_with_normals);
+  // gp.setMu(2.0);
+  // gp.setSearchRadius(10.0);
+  // gp.reconstruct(*mesh);
+
+  // pcl::PolygonMesh::Ptr mesh2(new pcl::PolygonMesh());
+  // pcl::search::KdTree<pcl::PointNormal>::Ptr tree(new pcl::search::KdTree<pcl::PointNormal>());
+  // tree->setInputCloud(pc_with_normals);
+  // pcl::GridProjection<pcl::PointNormal> gp2;
+  // gp2.setInputCloud(pc_with_normals);
+  // gp2.setResolution(0.01);
+  // gp2.setPaddingSize(3);
+  // gp2.setMaxBinarySearchLevel(5);
+  // gp2.setSearchMethod(tree);
+  // gp2.reconstruct(*mesh2);
+
+  // std::cout << mesh->polygons.size() << "\n";
+  // std::cout << mesh2->polygons.size() << "\n";
+
+  // Pointcloud::Ptr tmp(new Pointcloud());
+  // pcl::fromPCLPointCloud2(mesh2->cloud, *tmp);
+
+  // auto triangles = force_triangular_faces(tmp, mesh2->polygons);
+  // mesh2->polygons = triangles;
+  // std::cout << pc_with_normals->size() << " " << tmp->size() << "\n";
+  // pcl::io::saveOBJFile("mesh_test.obj", *mesh);
+  // pcl::io::saveOBJFile("mesh_test2.obj", *mesh2);
 
 
   return 0;

@@ -27,7 +27,8 @@ pcl::PointCloud<pcl::Normal>::Ptr compute_normals_from_nearest(Pointcloud::Ptr p
 
 Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc, double radius, int polynomial_order, int point_density, double sqr_gauss_param);
 
-Eigen::Vector3d pca(Pointcloud::Ptr pc);
+Eigen::Vector3d pca_axes(Pointcloud::Ptr pc);
+Eigen::Vector3d pca_axes_old(Pointcloud::Ptr pc);
 
 
 inline double sq_L2_dist(Point const& a, Point const& b)

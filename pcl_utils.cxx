@@ -73,7 +73,31 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc, double radius, int polyno
 
 
 
-Eigen::Vector3d pca(Pointcloud::Ptr pc)
+
+Eigen::Vector3d pca_axes(Pointcloud::Ptr pc)
+{
+  const unsigned int n_points = pc->size();
+  Eigen::Matrix<double, Eigen::Dynamic, 3> pts(n_points, 3);
+  Eigen::Vector3d center(0.0, 0.0, 0.0);
+  for (unsigned int j = 0; j < n_points; ++j)
+  {
+    pts(j, 0) = pc->points[j].x;
+    pts(j, 1) = pc->points[j].y;
+    pts(j, 2) = pc->points[j].z;
+    center += pts.row(j);
+  }
+  center /= n_points;
+  pts = pts.rowwise() - center.transpose();
+  Eigen::Matrix3d mat = (1.0 / n_points) * pts.transpose() * pts;
+
+  Eigen::EigenSolver<Eigen::Matrix3d> eig(mat);
+  Eigen::Vector3d eig_vals = eig.eigenvalues().real();
+  std::sort(eig_vals.data(), eig_vals.data() + eig_vals.size(), std::greater<double>());
+  Eigen::Vector3d axes = eig_vals.cwiseSqrt();
+  return 4 * axes;  // 2 times for the diameter and 2 times for 2 stddev
+}
+
+Eigen::Vector3d pca_axes_old(Pointcloud::Ptr pc)
 {
   const unsigned int n_points = pc->size();
   Eigen::Matrix<double, Eigen::Dynamic, 3> pts(n_points, 3);

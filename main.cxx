@@ -44,6 +44,11 @@
 #include <pcl/surface/gp3.h>
 #include <pcl/segmentation/extract_clusters.h>
 
+#include <pcl/surface/vtk_smoothing/vtk_utils.h>
+#include <vtkSmartPointer.h>
+#include <vtkPolyData.h>
+#include <vtkFillHolesFilter.h>
+
 #include <Eigen/Dense>
 
 #include "pcl_utils.h"
@@ -98,6 +103,12 @@ fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a
       nb.normalize();
       double dot_prod = na.dot(nb);
       double angle_diff = 180 * std::acos(dot_prod) / PI;
+
+      Eigen::Vector3d vec_ab(pc_b->points[min_dist_idx].x - pc_a->points[idx_a].x,
+                             pc_b->points[min_dist_idx].x - pc_a->points[idx_a].y,
+                             pc_b->points[min_dist_idx].x - pc_a->points[idx_a].z);
+     // if (std::abs(vec_ab.dot(na)) > 5.0)
+     //   continue;
 
       if (angle_diff < 10 || angle_diff > 170)
       {
@@ -550,31 +561,31 @@ int main(int argc, char* argv[])
   // pcl::io::savePLYFile("regions_growing.ply", *colored_cloud); 
 
   // save only the cluster with at least a certain number of points
-  // srand (static_cast<unsigned int> (time (0)));
-  // std::vector<unsigned char> colors;
-  // for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
-  // {
-  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
-  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
-  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
-  // }
-  // pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
-  // colored_pc->resize(pc->size());
-  // for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
-  // {
-  //   auto& v = clusters[cluster_id];
-  //   if (v.indices.size() < 20) continue;
-  //   for (auto i : v.indices)
-  //   {
-  //     colored_pc->points[i].x = pc->points[i].x;
-  //     colored_pc->points[i].y = pc->points[i].y;
-  //     colored_pc->points[i].z = pc->points[i].z;
-  //     colored_pc->points[i].r = colors[cluster_id * 3];
-  //     colored_pc->points[i].g = colors[cluster_id * 3 + 1];
-  //     colored_pc->points[i].b = colors[cluster_id * 3 + 2];
-  //   }
-  // }
-  // pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
+  srand (static_cast<unsigned int> (time (0)));
+  std::vector<unsigned char> colors;
+  for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
+  {
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+    colors.push_back(static_cast<unsigned char> (rand () % 256));
+  }
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
+  colored_pc->resize(pc->size());
+  for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
+  {
+    auto& v = clusters[cluster_id];
+    if (v.indices.size() < 20) continue;
+    for (auto i : v.indices)
+    {
+      colored_pc->points[i].x = pc->points[i].x;
+      colored_pc->points[i].y = pc->points[i].y;
+      colored_pc->points[i].z = pc->points[i].z;
+      colored_pc->points[i].r = colors[cluster_id * 3];
+      colored_pc->points[i].g = colors[cluster_id * 3 + 1];
+      colored_pc->points[i].b = colors[cluster_id * 3 + 2];
+    }
+  }
+  pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
 
 
 
@@ -692,6 +703,7 @@ int main(int argc, char* argv[])
   // Matching between parts
   print_step("Parts matching");
   std::vector<std::vector<int>> edges(n_parts, std::vector<int>());
+  unsigned int nb_fusions = 0;
   for (unsigned int a = 0; a < n_parts; ++a)
   {
     for (unsigned int b = a+1; b < n_parts; ++b)
@@ -713,9 +725,11 @@ int main(int argc, char* argv[])
 
         edges[a].push_back(b);
         edges[b].push_back(a);
+        nb_fusions++;
       }
     }
   }
+  std::cout << nb_fusions << " fusions\n";
 
 
   // BFS to identify groups of connected parts in an efficient way
@@ -792,8 +806,18 @@ int main(int argc, char* argv[])
   print_step("Final filtering, smoothing and triangulation");
   for (unsigned int i = 0; i < groups_pc.size(); ++i)
   {
-    std::cout << "group " << i << ": ";
-    Eigen::Vector3d eig_vals = pca(groups_pc[i]);
+    std::cout << "group " << i << ": \n";
+    
+    Eigen::Vector3d eig_vals_old = pca_axes_old(groups_pc[i]);
+    std::cout << "------------------> old axes = " << eig_vals_old.transpose() << " ----> ";
+    if (eig_vals_old[0] >= 100) std::cout << "PASSED\n";
+    else std::cout << "NO\n";
+
+    Eigen::Vector3d eig_vals = pca_axes(groups_pc[i]);
+    std::cout << "------------------> new axes = " << eig_vals.transpose() << " ----> ";
+    if (eig_vals[0] >= 100) std::cout << "PASSED\n";
+    else std::cout << "NO\n\n";
+    pcl::io::savePLYFile("groups_pc/group_" + std::to_string(i) + ".ply", *groups_pc[i]);
     if (eig_vals[0] >= 100)
     {
       voxelGridFilter(groups_pc[i], 3.0);
@@ -814,15 +838,38 @@ int main(int argc, char* argv[])
 
       auto cleaned_faces = clean_mesh(smooth_pc, mesh->polygons);
       auto manifold_faces = remove_non_manifold_faces(smooth_pc, cleaned_faces);
+      mesh->polygons = manifold_faces;
       // analyze_non_manifold_edges(manifold_faces);
-      saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", smooth_pc, manifold_faces);
+
+      saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh_no_fill.obj", smooth_pc, manifold_faces);
+
+      // MAYBE REENABLE AFTER
+      // vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
+      // pcl::VTKUtils::convertToVTK(*mesh, pd);
+      // vtkSmartPointer<vtkFillHolesFilter> fill_holes = vtkSmartPointer<vtkFillHolesFilter>::New();
+      // fill_holes->SetInputData(pd);
+      // fill_holes->SetHoleSize(100);
+      // fill_holes->Update();
+      // pcl::PolygonMesh::Ptr filled_mesh(new pcl::PolygonMesh());
+      // vtkSmartPointer<vtkPolyData> filled_pd = vtkSmartPointer<vtkPolyData>::New();
+      // filled_pd->DeepCopy(fill_holes->GetOutput());
+      // pcl::VTKUtils::convertToPCL(filled_pd, *filled_mesh);
+
+      // manifold_faces = remove_non_manifold_faces(smooth_pc, filled_mesh->polygons);
+      // filled_mesh->polygons = manifold_faces;
+
+      // pcl::io::saveOBJFile("groups_meshes/group_" + std::to_string(i) + "_clean_mesh.obj", *filled_mesh);
+      // saveTS(output_folder + "group_" + std::to_string(i) + ".ts", smooth_pc, filled_mesh->polygons);
+      
       saveTS(output_folder + "group_" + std::to_string(i) + ".ts", smooth_pc, manifold_faces);
+
 
       std::cout << manifold_faces.size() << " faces\n";
     }
     else 
     {
       std::cout << "Ignore group (too small)\n";
+
     }
   }
 
