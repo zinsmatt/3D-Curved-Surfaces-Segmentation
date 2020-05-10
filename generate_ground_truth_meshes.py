@@ -13,6 +13,10 @@ for num in range(1, 11):
     filenames = glob.glob("/home/matt/dev/Seismic_3D_Volume/training/ground_truth/t%02d/*.ts" % num)
     n_files = len(filenames)
     
+    output_parts_folder = os.path.join(output_folder, "gt_%02d" % num)
+    if not os.path.isdir(output_parts_folder):
+        os.mkdir(output_parts_folder)
+    
     colors = np.random.randint(0, 255, (n_files, 3))
     colors_str = [" ".join(map(str, c)) for c in colors]
     
@@ -26,9 +30,10 @@ for num in range(1, 11):
             if len(l) > 0 and l[0] == 'V':
                 buf_loc.append(" ".join(l.split()[2:]) + " " + colors_str[it] + "\n")
                 
-        # with open("gt_%02d_%02d.obj" % (num, it), "w") as fout:
-        #     for b in buf_loc:
-        #         fout.write("v " + b)
+        name = os.path.splitext(os.path.basename(filename))[0]
+        with open(os.path.join(output_parts_folder, name + ".obj"), "w") as fout:
+            for b in buf_loc:
+                fout.write("v " + b)
             
         buf.extend(buf_loc)
         

@@ -1,19 +1,3 @@
-//=========================================================================
-//
-// Copyright 2019 Kitware, Inc.
-// Author: Matthieu Zins
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//=========================================================================
 
 #include <ctime>
 #include <fstream>
@@ -24,7 +8,6 @@
 #include <vector>
 #include <stdlib.h>
 #include <unordered_set>
-#include <filesystem>
 #include <numeric>
  
 #include <pcl/point_cloud.h>
@@ -52,7 +35,7 @@
 
 #include <vtkSmartPointer.h>
 #include <vtkDelaunay3D.h>
-#include <vtkOBJWriter.h>
+//#include <vtkOBJWriter.h>
 #include <vtkPolyData.h>
 #include <vtkFloatArray.h>
 #include <vtkPoints.h>
@@ -67,7 +50,6 @@ using Point = pcl::PointXYZ;
 using Pointcloud = pcl::PointCloud<Point>;
 using KDTree = pcl::KdTreeFLANN<Point>;
 
-namespace fs = std::filesystem;
 
 
 class Match_debugger
@@ -405,7 +387,7 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc)
   mls.setInputCloud(pc);
   mls.setPolynomialOrder(2);
   mls.setSearchMethod(tree);
-  mls.setNumberOfThreads(8);
+  //mls.setNumberOfThreads(8);
   mls.setPolynomialFit(true);
   mls.setPointDensity(10);
   mls.setSqrGaussParam(4.0);
@@ -426,7 +408,7 @@ Pointcloud::Ptr smooth_point_cloud2(Pointcloud::Ptr pc)
   mls.setInputCloud(pc);
   mls.setPolynomialOrder(2);
   mls.setSearchMethod(tree);
-  mls.setNumberOfThreads(8);
+  //mls.setNumberOfThreads(8);
   mls.setPolynomialFit(true);
   mls.setPointDensity(50);
   mls.setSqrGaussParam(2.0);
@@ -1117,13 +1099,14 @@ Eigen::Vector3d pca_axes(Pointcloud::Ptr pc)
 
 int main(int argc, char* argv[])
 {
-  pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
-  pcl::io::loadOBJFile("/home/matt/dev/Seismic_3D_Volume/build/groups_meshes/group_107_clean_mesh.obj", *mesh);
-  Pointcloud::Ptr pc(new Pointcloud());
-  pcl::fromPCLPointCloud2(mesh->cloud, *pc);
 
-  Eigen::Vector3d axes = pca_axes(pc);
-  std::cout << "axes = " << axes.transpose() << "\n";
+  // pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());
+  // pcl::io::loadOBJFile("/home/matt/dev/Seismic_3D_Volume/build/groups_meshes/group_107_clean_mesh.obj", *mesh);
+  // Pointcloud::Ptr pc(new Pointcloud());
+  // pcl::fromPCLPointCloud2(mesh->cloud, *pc);
+
+  // Eigen::Vector3d axes = pca_axes(pc);
+  // std::cout << "axes = " << axes.transpose() << "\n";
 
 
   // srand (time(NULL));
