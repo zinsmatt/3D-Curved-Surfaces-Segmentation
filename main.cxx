@@ -43,6 +43,19 @@
 
 namespace fs = std::experimental::filesystem;
 
+struct Match_ab
+{
+  int a;
+  int b;
+  int x;
+  std::vector<std::pair<int, int>> links_ab;
+  std::vector<std::pair<int, int>> links_ba;
+  Match_ab(int aa, int bb, int xx,  const std::vector<std::pair<int, int>>& la, const std::vector<std::pair<int, int>>& lb) :
+    a(aa), b(bb), x(xx), links_ab(la), links_ba(lb)
+    {}
+  Match_ab() {}
+};
+
 
 std::pair<std::vector<int>, pcl::PointCloud<pcl::Boundary>::Ptr> detect_contour_points2(Pointcloud::Ptr pc, pcl::PointCloud<pcl::Normal>::Ptr normals)
 {
@@ -85,7 +98,7 @@ fusion_attempt(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a
 
     auto min_dist_idx = nearest_idx.front();
 
-    if (sq_dists.front() < 500.0)
+    if (sq_dists.front() < 1000.0)
     {
       Eigen::Vector3d na(normals_a->points[idx_a].normal_x, normals_a->points[idx_a].normal_y, normals_a->points[idx_a].normal_z);
       Eigen::Vector3d nb(normals_b->points[min_dist_idx].normal_x, normals_b->points[min_dist_idx].normal_y, normals_b->points[min_dist_idx].normal_z);
@@ -511,6 +524,9 @@ void print_step(const std::string& msg)
 // }
 
 
+std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>::Ptr>>
+ second_pass(const std::vector<Pointcloud::Ptr>& parts_pc, const std::vector<pcl::PointCloud<pcl::Normal>::Ptr> parts_normals, int n_nodes);
+
 int main(int argc, char* argv[])
 {
   std::chrono::high_resolution_clock::time_point t0 = std::chrono::high_resolution_clock::now();
@@ -605,7 +621,7 @@ int main(int argc, char* argv[])
   std::vector<pcl::PointIndices> filtered_clusters;
   for (const auto c : clusters)
   {
-    if (c.indices.size() > 100)
+    if (c.indices.size() > 800)
     {
       filtered_clusters.push_back(c);
     }
@@ -617,31 +633,31 @@ int main(int argc, char* argv[])
   // pcl::io::savePLYFile("regions_growing.ply", *colored_cloud); 
 
   // save only the cluster with at least a certain number of points
-  srand (static_cast<unsigned int> (time (0)));
-  std::vector<unsigned char> colors;
-  for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
-  {
-    colors.push_back(static_cast<unsigned char> (rand () % 256));
-    colors.push_back(static_cast<unsigned char> (rand () % 256));
-    colors.push_back(static_cast<unsigned char> (rand () % 256));
-  }
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
-  colored_pc->resize(pc->size());
-  for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
-  {
-    auto& v = clusters[cluster_id];
-    if (v.indices.size() < 20) continue;
-    for (auto i : v.indices)
-    {
-      colored_pc->points[i].x = pc->points[i].x;
-      colored_pc->points[i].y = pc->points[i].y;
-      colored_pc->points[i].z = pc->points[i].z;
-      colored_pc->points[i].r = colors[cluster_id * 3];
-      colored_pc->points[i].g = colors[cluster_id * 3 + 1];
-      colored_pc->points[i].b = colors[cluster_id * 3 + 2];
-    }
-  }
-  //pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
+  // srand (static_cast<unsigned int> (time (0)));
+  // std::vector<unsigned char> colors;
+  // for (size_t i_segment = 0; i_segment < clusters.size (); i_segment++)
+  // {
+  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   colors.push_back(static_cast<unsigned char> (rand () % 256));
+  // }
+  // pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_pc(new pcl::PointCloud<pcl::PointXYZRGB>());
+  // colored_pc->resize(pc->size());
+  // for (int cluster_id = 0; cluster_id < clusters.size(); ++cluster_id)
+  // {
+  //   auto& v = clusters[cluster_id];
+  //   if (v.indices.size() < 20) continue;
+  //   for (auto i : v.indices)
+  //   {
+  //     colored_pc->points[i].x = pc->points[i].x;
+  //     colored_pc->points[i].y = pc->points[i].y;
+  //     colored_pc->points[i].z = pc->points[i].z;
+  //     colored_pc->points[i].r = colors[cluster_id * 3];
+  //     colored_pc->points[i].g = colors[cluster_id * 3 + 1];
+  //     colored_pc->points[i].b = colors[cluster_id * 3 + 2];
+  //   }
+  // }
+  // pcl::io::savePLYFile("regions_growing_clusters.ply", *colored_pc); 
 
 
 
@@ -654,7 +670,7 @@ int main(int argc, char* argv[])
 
   for (unsigned int i = 0; i < clusters.size(); ++i)
   {
-    std::cout << i << " / " << clusters.size() << std::endl;
+    //std::cout << i << " / " << clusters.size() << std::endl;
     auto& v = clusters[i];
     if (v.indices.size() < 20)
       continue;
@@ -680,7 +696,7 @@ int main(int argc, char* argv[])
     //}
     //pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + ".ply", *ctr_pc);
 
-    //pcl::io::savePLYFile("parts/part_" + std::to_string(i) + ".ply", *parts_pc[i]);
+    //  pcl::io::savePLYFile("parts/part_" + std::to_string(i) + ".ply", *parts_pc[i]);
   }
   const unsigned int n_parts = parts_pc.size();
   std::cout << "found " << n_parts << "parts.\n";
@@ -827,31 +843,31 @@ int main(int argc, char* argv[])
   }
 
   // Save the point cloud with one color per group
-  std::vector<unsigned char> groups_colors;
-  for (size_t i = 0; i < g; i++)
-  {
-    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
-    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
-    groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
-  }
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_groups(new pcl::PointCloud<pcl::PointXYZRGB>());
-  for (int i = 0; i < n_parts; ++i)
-  {
-    int group_idx = groups[i];
+  // std::vector<unsigned char> groups_colors;
+  // for (size_t i = 0; i < g; i++)
+  // {
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  // }
+  // pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_groups(new pcl::PointCloud<pcl::PointXYZRGB>());
+  // for (int i = 0; i < n_parts; ++i)
+  // {
+  //   int group_idx = groups[i];
 
-    for (unsigned int j = 0; j < parts_pc[i]->size(); ++j)
-    {
-      pcl::PointXYZRGB p;
-      p.x = parts_pc[i]->points[j].x;
-      p.y = parts_pc[i]->points[j].y;
-      p.z = parts_pc[i]->points[j].z;
-      p.r = groups_colors[group_idx * 3];
-      p.g = groups_colors[group_idx * 3 + 1];
-      p.b = groups_colors[group_idx * 3 + 2];
-      colored_groups->push_back(p);
-    }
-  }
-  //pcl::io::savePLYFile("colored_groups.ply", *colored_groups);
+  //   for (unsigned int j = 0; j < parts_pc[i]->size(); ++j)
+  //   {
+  //     pcl::PointXYZRGB p;
+  //     p.x = parts_pc[i]->points[j].x;
+  //     p.y = parts_pc[i]->points[j].y;
+  //     p.z = parts_pc[i]->points[j].z;
+  //     p.r = groups_colors[group_idx * 3];
+  //     p.g = groups_colors[group_idx * 3 + 1];
+  //     p.b = groups_colors[group_idx * 3 + 2];
+  //     colored_groups->push_back(p);
+  //   }
+  // }
+  //  pcl::io::savePLYFile("colored_groups.ply", *colored_groups);
 
 
   // Create point clouds and normals per group
@@ -870,6 +886,78 @@ int main(int argc, char* argv[])
     *groups_normals[gr] += *parts_normals[i];
   }
 
+
+
+  std::vector<Pointcloud::Ptr> group_refused_pc;
+  for (unsigned int i = 0; i < groups_pc.size(); ++i)
+  {
+
+    auto norms = compute_normals_from_radius(groups_pc[i], 9);
+
+    pcl::RegionGrowing<pcl::PointXYZ, pcl::Normal> reg;
+    pcl::search::Search<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud(groups_pc[i]);
+    reg.setMinClusterSize(3);
+    reg.setMaxClusterSize(1000000);
+    reg.setSearchMethod(tree);
+    reg.setNumberOfNeighbours(6);
+    reg.setInputCloud(groups_pc[i]);
+    reg.setInputNormals(norms);
+    reg.setSmoothnessThreshold(10.0 / 180.0 * M_PI);
+    //reg.setCurvatureThreshold(2.0);
+    std::vector<pcl::PointIndices> clusters;
+    reg.extract(clusters);
+    std::vector<pcl::PointIndices> filtered_clusters;
+    for (const auto c : clusters)
+    {
+      if (c.indices.size() > 300)
+      {
+        filtered_clusters.push_back(c);
+      }
+    }
+    clusters = filtered_clusters;
+
+    // save the point cloud with one color per cluster
+    // pcl::PointCloud <pcl::PointXYZRGB>::Ptr colored_cloud = reg.getColoredCloud();
+    // pcl::io::savePLYFile("per_groups_clustering/group_" + std::to_string(i) + ".ply", *colored_cloud); 
+
+    // pcl::PointCloud<pcl::PointNormal>::Ptr pc_with_normals(new pcl::PointCloud<pcl::PointNormal>());
+    // pcl::concatenateFields(*groups_pc[i], *groups_normals[i], *pc_with_normals);
+    // pcl::io::savePLYFile("per_groups_clustering/group_" + std::to_string(i) + "_with_normals.ply", *pc_with_normals);
+
+    std::vector<Pointcloud::Ptr> group_sub_pc;
+    std::vector<pcl::PointCloud<pcl::Normal>::Ptr> group_sub_normals;
+    for (auto& v : clusters)
+    {
+      Pointcloud::Ptr pts(new Pointcloud());
+      pcl::PointCloud<pcl::Normal>::Ptr norms(new pcl::PointCloud<pcl::Normal>());
+      pts->resize(v.indices.size());
+      norms->resize(v.indices.size());
+      int a = 0;
+      for (auto idx : v.indices)
+      {
+        pts->points[a] = groups_pc[i]->points[idx];
+        norms->points[a] = groups_normals[i]->points[idx];
+        ++a;
+      }
+      group_sub_pc.push_back(pts);
+      group_sub_normals.push_back(norms);
+    }
+
+    if (clusters.size() >= 10)
+    {
+      auto [refused_pc, refused_normals] = second_pass(group_sub_pc, group_sub_normals, clusters.size());
+      std::cout << "!!!!!! second pass gives " << refused_pc.size() << " new groups" << std::endl;
+      std::cout << " from " << group_refused_pc.size() << " to " << group_refused_pc.size() + refused_pc.size()-1 << std::endl;
+      group_refused_pc.insert(group_refused_pc.end(), refused_pc.begin(), refused_pc.end());
+    }
+    else
+    {
+      group_refused_pc.push_back(groups_pc[i]);
+    }
+  }
+
+  groups_pc = group_refused_pc;
 
   // Final filtering and smoothing before surface triangulation
   print_step("Final filtering, smoothing and triangulation");
@@ -912,21 +1000,23 @@ int main(int argc, char* argv[])
       mesh->polygons = cleaned_faces;
       // analyze_non_manifold_edges(manifold_faces);
 
-      //saveOBJ("groups_meshes/group_" + std::to_string(i) + "_clean_mesh_no_fill.obj", smooth_pc, manifold_faces);
+      char buf[50];
+      sprintf(buf, "%02d", i);
+      saveOBJ("groups_meshes/group_" + std::string(buf) + "_clean_mesh_no_fill.obj", smooth_pc, manifold_faces);
 
-      // MAYBE REENABLE AFTER
+      // // MAYBE REENABLE AFTER
       // vtkSmartPointer<vtkPolyData> pd = vtkSmartPointer<vtkPolyData>::New();
       // pcl::VTKUtils::convertToVTK(*mesh, pd);
       // vtkSmartPointer<vtkFillHolesFilter> fill_holes = vtkSmartPointer<vtkFillHolesFilter>::New();
       // fill_holes->SetInputData(pd);
-      // fill_holes->SetHoleSize(100);
+      // fill_holes->SetHoleSize(150);
       // fill_holes->Update();
       // pcl::PolygonMesh::Ptr filled_mesh(new pcl::PolygonMesh());
       // vtkSmartPointer<vtkPolyData> filled_pd = vtkSmartPointer<vtkPolyData>::New();
       // filled_pd->DeepCopy(fill_holes->GetOutput());
       // pcl::VTKUtils::convertToPCL(filled_pd, *filled_mesh);
 
-      // cleaned_faces = clean_mesh(smooth_pc, filled_mesh->polygons);
+      // cleaned_faces = clean_mesh2(smooth_pc, filled_mesh->polygons);
       // manifold_faces = remove_non_manifold_faces(smooth_pc, cleaned_faces);
       // filled_mesh->polygons = manifold_faces;
 
@@ -950,5 +1040,379 @@ int main(int argc, char* argv[])
   std::cout << "Done in " << time_span.count() << " s.\n";
 
   return 0;
+
+}
+
+
+
+std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>::Ptr>>
+ second_pass(const std::vector<Pointcloud::Ptr>& parts_pc, const std::vector<pcl::PointCloud<pcl::Normal>::Ptr> parts_normals, int n_nodes)
+{
+  // Extract each part separately and computer normals and boundaries
+  print_step("Parts contours extraction");
+
+  std::vector<std::vector<int>> parts_boundaries;
+  for (unsigned int i = 0; i < parts_pc.size(); ++i)
+  {
+    auto [ctr, bounds] = detect_contour_points2(parts_pc[i], parts_normals[i]);
+    parts_boundaries.push_back(ctr);
+
+    // Save the contour points
+    //Pointcloud::Ptr ctr_pc(new Pointcloud());
+    //for (auto k : ctr)
+    //{
+    //  ctr_pc->push_back(p->points[k]);
+    //}
+    //pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + ".ply", *ctr_pc);
+
+    // pcl::io::savePLYFile("sub_parts/sub_part_" + std::to_string(i) + ".ply", *parts_pc[i]);
+  }
+  const unsigned int n_parts = parts_pc.size();
+  std::cout << "found " << n_parts << " sub parts.\n";
+
+/******************  Process contours (define order + densify)  ***********************/
+  print_step("Contours smoothing");
+
+  // Organize contour and extract them as point cloud and normals
+  std::vector<Pointcloud::Ptr> contours_pc;
+  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> contours_normals;
+  for (unsigned int i = 0; i < parts_pc.size(); ++i)
+  {
+    auto ordered_ctr = organize_contour(parts_pc[i], parts_boundaries[i]);
+    Pointcloud::Ptr ctr_pc(new Pointcloud());
+    pcl::PointCloud<pcl::Normal>::Ptr ctr_norms(new pcl::PointCloud<pcl::Normal>());
+    ctr_pc->resize(ordered_ctr.size());
+    ctr_norms->resize(ordered_ctr.size());
+    for (int j = 0; j < ordered_ctr.size(); ++j)
+    {
+      ctr_pc->points[j] = parts_pc[i]->points[ordered_ctr[j]];
+      ctr_norms->points[j] = parts_normals[i]->points[ordered_ctr[j]];
+    }
+    contours_pc.push_back(ctr_pc);
+    contours_normals.push_back(ctr_norms);
+
+    // pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + "_ordered.ply", *ctr_pc);
+  }
+
+
+  // mayeb should densify contour HERE
+
+  // Contour points smoothing
+  std::vector<double> weights = {1.0/16, 1.0/16, 2.0/16, 4.0/16, 0.0, 4.0/16, 2.0/16, 1.0/16, 1.0/16};
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+      Pointcloud::Ptr smooth(new Pointcloud());
+      *smooth = *contours_pc[i];
+      for (int j = 0; j < contours_pc[i]->size(); ++j)
+      {
+        double tot_x = 0.0;
+        double tot_y = 0.0;
+        double tot_z = 0.0;
+        for (int d = -4; d <= 4; ++d)
+        {
+          int idx = (j + d) % contours_pc[i]->size();
+          if (idx < 0)
+            idx += contours_pc[i]->size();
+          tot_x += contours_pc[i]->points[idx].x; 
+          tot_y += contours_pc[i]->points[idx].y; 
+          tot_z += contours_pc[i]->points[idx].z; 
+        }
+        smooth->points[j].x = tot_x / 9;
+        smooth->points[j].y = tot_y / 9;
+        smooth->points[j].z = tot_z / 9;
+      }
+      *contours_pc[i] = *smooth;
+
+      // pcl::io::savePLYFile("parts_ctr/part_" + std::to_string(i) + "_smooth.ply", *contours_pc[i]);
+  }
+
+
+  // Creation of contour trees for fast search
+  std::vector<KDTree::Ptr> contours_trees;
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+    KDTree::Ptr tree(new KDTree());
+    tree->setInputCloud(contours_pc[i]);
+    contours_trees.push_back(tree);
+  }
+
+
+
+
+
+  std::vector<int> idx(n_parts);
+  std::iota(idx.begin(), idx.end(), 0);
+  std::sort(idx.begin(), idx.end(), [&parts_pc] (int a, int b) {
+    return parts_pc[a]->size() > parts_pc[b]->size();
+  });
+
+
+  int N = 1;
+  if (n_nodes >= 10 && n_nodes <= 20)
+  {
+    N = 2;
+  }
+  else if (n_nodes > 20)
+  {
+    N = 4;
+  }
+  N = std::min((int)n_parts, N);
+
+  std::vector<std::vector<Pointcloud::Ptr>> per_groups_pc(N, std::vector<Pointcloud::Ptr>());
+  std::vector<std::vector<pcl::PointCloud<pcl::Normal>::Ptr>> per_groups_normals(N, std::vector<pcl::PointCloud<pcl::Normal>::Ptr>());
+  for (unsigned int i = 0; i < N; ++i)
+  {
+    per_groups_pc[i].push_back(parts_pc[idx[i]]);
+    per_groups_normals[i].push_back(parts_normals[idx[i]]);
+  }
+
+  for (unsigned int i = N; i < n_parts; ++i)
+  {
+    int a = idx[i];
+
+    std::vector<Match_ab> poss_matches;
+    for (unsigned int k = 0; k < N; ++k)
+    {
+      int b = idx[k];
+      auto [ret1, links1] = fusion_attempt(contours_pc[a], contours_normals[a], contours_trees[a],
+                                           contours_pc[b], contours_normals[b], contours_trees[b], a, b);
+      auto [ret2, links2] = fusion_attempt(contours_pc[b], contours_normals[b], contours_trees[b],
+                                           contours_pc[a], contours_normals[a], contours_trees[a], b, a);
+      if (ret1 && ret2)
+      {
+        poss_matches.emplace_back(a, b, k, links1, links2);
+      }
+    }
+
+
+    if (poss_matches.size() == 0)
+      continue;
+    
+    std::sort(poss_matches.begin(), poss_matches.end(), [] (const Match_ab& a, const Match_ab& b) {
+      return a.links_ba.size() + a.links_ab.size() > b.links_ab.size() + b.links_ba.size();
+    });
+
+    const auto& best_match = poss_matches.front();
+
+    auto [new_pc, new_normals] = interpolate_meshes(contours_pc[best_match.a], contours_normals[best_match.a], contours_pc[best_match.b], contours_normals[best_match.b], best_match.links_ab);
+    *parts_pc[best_match.a] += *new_pc;
+    *parts_normals[best_match.a] += *new_normals;
+    auto [new_pc2, new_normals2] = interpolate_meshes(contours_pc[best_match.b], contours_normals[best_match.b], contours_pc[best_match.a], contours_normals[best_match.a], best_match.links_ba);
+    *parts_pc[best_match.a] += *new_pc2;
+    *parts_normals[best_match.a] += *new_normals2;
+
+    per_groups_pc[best_match.x].push_back(parts_pc[best_match.a]);
+    per_groups_normals[best_match.x].push_back(parts_normals[best_match.a]);
+
+
+  }
+
+
+  std::vector<Pointcloud::Ptr> groups_pc(N, nullptr);
+  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> groups_normals(N, nullptr);
+  for (unsigned int i = 0; i < N; ++i)
+  {
+    for (unsigned int j = 1; j < per_groups_pc[i].size(); ++j)
+    {
+      *per_groups_pc[i][0] += *per_groups_pc[i][j];
+      *per_groups_normals[i][0] += *per_groups_normals[i][j];
+    }
+    groups_pc[i] = per_groups_pc[i][0];
+    groups_normals[i] = per_groups_normals[i][0];
+  }
+
+  return {groups_pc, groups_normals};
+
+
+/*
+
+
+
+  // Matching between parts
+  print_step("Parts matching");
+  std::vector<std::vector<int>> edges(n_parts, std::vector<int>());
+  unsigned int nb_fusions = 0;
+  std::vector<Match_ab> matches;
+
+  std::vector<std::vector<Match_ab>> per_part_matches(n_parts, std::vector<Match_ab>());
+  for (unsigned int a = 0; a < n_parts; ++a)
+  {
+    for (unsigned int b = a+1; b < n_parts; ++b)
+    {
+      //std::cout << a << " " << b <<  std::endl;
+      auto [ret1, links1] = fusion_attempt(contours_pc[a], contours_normals[a], contours_trees[a],
+                                           contours_pc[b], contours_normals[b], contours_trees[b], a, b);
+      auto [ret2, links2] = fusion_attempt(contours_pc[b], contours_normals[b], contours_trees[b],
+                                           contours_pc[a], contours_normals[a], contours_trees[a], b, a);
+      if (ret1 && ret2)
+      {      
+        Match_ab match(a, b, links1, links2);
+        matches.emplace_back(match);
+        per_part_matches[a].push_back(match);
+      }
+    }
+  }
+
+  std::vector<Match_ab> good_matches;
+  for (unsigned int j = 0; j < n_parts; ++j)
+  {
+    if (per_part_matches[j].size() > 0)
+    {
+      sort(per_part_matches[j].begin(), per_part_matches[j].end(), [](const Match_ab& a, const Match_ab& b){
+        return a.links_ba.size() + a.links_ab.size() > b.links_ba.size() + b.links_ab.size();
+      });
+
+      good_matches.push_back(per_part_matches[j].front());
+    }
+  }
+
+
+
+  // std::sort(matches.begin(), matches.end(), [](const Match_ab &a, const Match_ab& b) {
+  //   return a.links_ba.size() + a.links_ab.size() > b.links_ba.size() + b.links_ab.size();
+
+  // });
+
+  // std::vector<int> counts(n_parts, 0);
+  // std::vector<int> good_matches;
+  // for (unsigned int j = 0; j < matches.size(); ++j)
+  // {
+  //   const auto& m = matches[j];
+  //   if (counts[m.a] < 2 && counts[m.b] < 2)
+  //   {
+  //     good_matches.push_back(j);
+  //     counts[m.a]++;
+  //     counts[m.b]++;
+
+  //     Match_debugger dbg;
+  //     for (auto & v : m.links_ab)
+  //     {
+  //       dbg.add_edge(contours_pc[m.a]->points[v.first], contours_pc[m.b]->points[v.second]);
+  //     }
+  //     for (auto & v : m.links_ba)
+  //     {
+  //       dbg.add_edge(contours_pc[m.b]->points[v.first], contours_pc[m.a]->points[v.second]);
+  //     }
+  //     dbg.save_obj("matches/match_" + std::to_string(m.a) + "_" + std::to_string(m.b) + ".obj");      
+  //   }
+  // }
+
+  // for (auto mi : good_matches)
+  // {
+  //   const auto& m = matches[mi];
+  for (auto& m : good_matches)
+  {
+    auto a = m.a;
+    auto b = m.b;
+    const auto& links1 = m.links_ab;
+    const auto& links2 = m.links_ba;
+    auto [new_pc, new_normals] = interpolate_meshes(contours_pc[a], contours_normals[a], contours_pc[b], contours_normals[b], links1);
+    *parts_pc[a] += *new_pc;
+    *parts_normals[a] += *new_normals;
+    auto [new_pc2, new_normals2] = interpolate_meshes(contours_pc[b], contours_normals[b], contours_pc[a], contours_normals[a], links2);
+    *parts_pc[b] += *new_pc2;
+    *parts_normals[b] += *new_normals2;
+
+    edges[a].push_back(b);
+    edges[b].push_back(a);
+  }
+  std::cout << good_matches.size() << " fusions\n";
+
+
+  // BFS to identify groups of connected parts in an efficient way
+  print_step("Connected sub part extraction");
+  std::vector<int> groups(n_parts, -1);
+  int g = 0;
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+    if (groups[i] != -1) 
+      continue;
+    std::queue<int> q;
+    q.push(i);
+    while (!q.empty())
+    {
+      auto x = q.front();
+      q.pop();
+      if (groups[x] != -1)
+        continue;
+      groups[x] = g;
+      for (auto e : edges[x])
+      {
+        q.push(e);
+      }
+    }
+    ++g;
+  }
+
+  // Save the point cloud with one color per group
+  // std::vector<unsigned char> groups_colors;
+  // for (size_t i = 0; i < g; i++)
+  // {
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  //   groups_colors.push_back(static_cast<unsigned char> (rand () % 256));
+  // }
+  // pcl::PointCloud<pcl::PointXYZRGB>::Ptr colored_groups(new pcl::PointCloud<pcl::PointXYZRGB>());
+  // for (int i = 0; i < n_parts; ++i)
+  // {
+  //   int group_idx = groups[i];
+
+  //   for (unsigned int j = 0; j < parts_pc[i]->size(); ++j)
+  //   {
+  //     pcl::PointXYZRGB p;
+  //     p.x = parts_pc[i]->points[j].x;
+  //     p.y = parts_pc[i]->points[j].y;
+  //     p.z = parts_pc[i]->points[j].z;
+  //     p.r = groups_colors[group_idx * 3];
+  //     p.g = groups_colors[group_idx * 3 + 1];
+  //     p.b = groups_colors[group_idx * 3 + 2];
+  //     colored_groups->push_back(p);
+  //   }
+  // }
+  //  pcl::io::savePLYFile("colored_groups.ply", *colored_groups);
+
+
+  // Create point clouds and normals per group
+  std::vector<Pointcloud::Ptr> groups_pc(g, nullptr);
+  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> groups_normals(g, nullptr);
+  for (unsigned int i = 0; i < n_parts; ++i)
+  {
+    int gr = groups[i];
+    if (!groups_pc[gr]) 
+    {
+      groups_pc[gr].reset(new Pointcloud());
+      groups_normals[gr].reset(new pcl::PointCloud<pcl::Normal>());
+    }
+
+    *groups_pc[gr] += *parts_pc[i];
+    *groups_normals[gr] += *parts_normals[i];
+  }
+
+  std::vector<int> indices(groups_pc.size());
+  std::iota(indices.begin(), indices.end(), 0);
+
+  std::sort(indices.begin(), indices.end(), [&groups_pc] (int a, int b) {
+    return groups_pc[a]->size() > groups_pc[b]->size();
+  });
+
+  std::vector<Pointcloud::Ptr> filtered_groups_pc;
+  std::vector<pcl::PointCloud<pcl::Normal>::Ptr> filtered_groups_normals;
+
+  for (int i = 0; i < 5; ++i)
+  {
+    filtered_groups_pc.push_back(groups_pc[indices[i]]);
+    filtered_groups_normals.push_back(groups_normals[indices[i]]);
+  }
+
+  // for (unsigned int i = 0; i < groups_pc.size(); ++i)
+  // {
+  //   if (groups_pc.size() <= 1 || groups_pc[i]->size() > 1000)
+  //   {
+  //     filtered_groups_pc.push_back(groups_pc[i]);
+  //     filtered_groups_normals.push_back(groups_normals[i]);
+  //   }
+  // }
+
+  return {filtered_groups_pc, filtered_groups_normals};*/
 
 }
