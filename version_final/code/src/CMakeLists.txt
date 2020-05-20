@@ -1,4 +1,3 @@
-
 cmake_minimum_required (VERSION 3.5.0)
 project(3D_segmentation)
 
@@ -8,10 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
-#find_package(VTK REQUIRED)
-#find_package(segyio REQUIRED)
 
-#include(${VTK_USE_FILE})
 
 set(SOURCES_DIR "./")
 # Headers
@@ -42,13 +38,10 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
     ${PCL_INCLUDE_DIRS}
-    #${VTK_INCLUDE_DIRS}
     )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${PCL_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_KDTREE_LIBRARY} ${PCL_SEARCH_LIBRARY} ${PCL_SURFACE_LIBRARY} ${PCL_FEATURES_LIBRARY}
-    #${VTK_LIBRARIES}
-    #segyio::segyio 
     Eigen3::Eigen
     )
 

@@ -96,7 +96,7 @@ std::pair<Pointcloud::Ptr, pcl::PointCloud<pcl::Normal>::Ptr>
 {
   Pointcloud::Ptr new_pc(new Pointcloud());
   pcl::PointCloud<pcl::Normal>::Ptr new_normals(new pcl::PointCloud<pcl::Normal>());
-  unsigned int nb = 10;
+  int nb = 10;
   for (auto& p : links)
   {
     auto a = p.first;
@@ -110,7 +110,6 @@ std::pair<Pointcloud::Ptr, pcl::PointCloud<pcl::Normal>::Ptr>
     double dy = pa.y - pb.y;
     double dz = pa.z - pb.z;
 
-    double d = std::sqrt(dx * dx + dy * dy + dz * dz);
     dx /= nb;
     dy /= nb;
     dz /= nb;
@@ -139,14 +138,13 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
   std::vector<std::vector<int>> orders;
   orders.push_back({});
   std::vector<bool> done(ctr.size(), false);
-  unsigned int k = 0;
-  for (unsigned int k = 0; k < ctr.size(); ++k)
+  for (int k = 0; k < static_cast<int>(ctr.size()); ++k)
   {
     if (done[idx] && start == -1)
       continue;
     double sq_min_dist = std::numeric_limits<double>::infinity();
     unsigned int sq_min_dist_idx = -1;
-    for (unsigned int i = 0; i < ctr.size(); ++i)
+    for (int i = 0; i < static_cast<int>(ctr.size()); ++i)
     {
       if (i != idx && !done[i])
       {
@@ -159,20 +157,20 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
       }
     }
 
-    if (sq_min_dist > 1000) // if the next point is too far, it means we should create a new contour
-    { // stuck
+    if (sq_min_dist > 1000) // if the next point is too far
+    {
 
       if (start != -1)
       {
-        // go in other direction from the start
+        // first, try to go in other direction from the start
         idx = start;
         start = -1;
       }
       else
       {
-        // start a new contour
+        // or start a new contour
         int start_again = 0;
-        while (start_again < ctr.size() && done[start_again])
+        while (start_again < static_cast<int>(ctr.size()) && done[start_again])
           ++start_again;
         orders.push_back({});
         done[idx] = true;
@@ -187,7 +185,7 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
     idx = sq_min_dist_idx;
   }
 
-  int max_size = 0, max_size_idx = 0;
+  unsigned int max_size = 0, max_size_idx = 0;
   for (unsigned int i = 0; i < orders.size(); ++i)
   {
     if (orders[i].size() > max_size)
@@ -203,7 +201,7 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
   }
 
   auto& best_order = orders[max_size_idx];
-  int i = 0;
+  unsigned int i = 0;
   while (i < best_order.size() && best_order[i] != best_order[0])
     ++i;
   if (i < best_order.size())
@@ -215,7 +213,7 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
 
 
 std::pair<bool, std::vector<std::pair<int, int>>>
-find_contours_links(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, KDTree::Ptr tree_a,
+find_contours_matches(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, KDTree::Ptr tree_a,
                     Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b, KDTree::Ptr tree_b)
 {
   std::vector<std::pair<int, int>> links;
@@ -308,7 +306,6 @@ std::vector<pcl::Vertices> remove_disconnected_faces(std::vector<pcl::Vertices>&
 
 
 
-/// td keeps only the largehis functions does a BFS anst (in term of number of faces) connected component of the mesh
 std::vector<pcl::Vertices> keep_largest_connected_component(Pointcloud::Ptr pc, std::vector<pcl::Vertices>& faces)
 {
   std::vector<int> labels(pc->size(), -1);
@@ -328,7 +325,7 @@ std::vector<pcl::Vertices> keep_largest_connected_component(Pointcloud::Ptr pc, 
   }
 
   /// BFS search
-  int cur = 0;
+  unsigned int cur = 0;
   int a = 0;
   while (cur < pc->size())
   {
@@ -384,21 +381,22 @@ std::vector<pcl::Vertices> keep_largest_connected_component(Pointcloud::Ptr pc, 
 void smooth_contours(std::vector<Pointcloud::Ptr>& contours_pc)
 {
   // Contour points smoothing
-  std::vector<double> weights = {1.0/16, 1.0/16, 2.0/16, 4.0/16, 0.0, 4.0/16, 2.0/16, 1.0/16, 1.0/16};
+  // Could use weights
+  // std::vector<double> weights = {1.0/16, 1.0/16, 2.0/16, 4.0/16, 0.0, 4.0/16, 2.0/16, 1.0/16, 1.0/16};
   for (unsigned int i = 0; i < contours_pc.size(); ++i)
   {
     Pointcloud::Ptr smooth(new Pointcloud());
     *smooth = *contours_pc[i];
-    for (int j = 0; j < contours_pc[i]->size(); ++j)
+    for (int j = 0; j < static_cast<int>(contours_pc[i]->size()); ++j)
     {
       double tot_x = 0.0;
       double tot_y = 0.0;
       double tot_z = 0.0;
       for (int d = -4; d <= 4; ++d)
       {
-        int idx = (j + d) % contours_pc[i]->size();
+        int idx = (j + d) % static_cast<int>(contours_pc[i]->size());
         if (idx < 0)
-          idx += contours_pc[i]->size();
+          idx += static_cast<int>(contours_pc[i]->size());
         tot_x += contours_pc[i]->points[idx].x;
         tot_y += contours_pc[i]->points[idx].y;
         tot_z += contours_pc[i]->points[idx].z;

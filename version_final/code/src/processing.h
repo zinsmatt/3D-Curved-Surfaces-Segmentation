@@ -85,7 +85,7 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
  *  to the matched points in each point cloud]
  */
 std::pair<bool, std::vector<std::pair<int, int>>>
-find_contours_links(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, KDTree::Ptr tree_a,
+find_contours_matches(Pointcloud::Ptr pc_a, pcl::PointCloud<pcl::Normal>::Ptr normals_a, KDTree::Ptr tree_a,
                     Pointcloud::Ptr pc_b, pcl::PointCloud<pcl::Normal>::Ptr normals_b, KDTree::Ptr tree_b);
 
 

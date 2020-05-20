@@ -181,7 +181,7 @@ int main(int argc, char* argv[])
     pcl::PointCloud<pcl::Normal>::Ptr ctr_norms(new pcl::PointCloud<pcl::Normal>());
     ctr_pc->resize(ordered_ctr.size());
     ctr_norms->resize(ordered_ctr.size());
-    for (int j = 0; j < ordered_ctr.size(); ++j)
+    for (unsigned int j = 0; j < ordered_ctr.size(); ++j)
     {
       ctr_pc->points[j] = parts_pc[i]->points[ordered_ctr[j]];
       ctr_norms->points[j] = parts_normals[i]->points[ordered_ctr[j]];
@@ -211,9 +211,9 @@ int main(int argc, char* argv[])
   {
     for (unsigned int b = a+1; b < n_parts; ++b)
     {
-      auto [ret1, links1] = find_contours_links(contours_pc[a], contours_normals[a], contours_trees[a],
+      auto [ret1, links1] = find_contours_matches(contours_pc[a], contours_normals[a], contours_trees[a],
                                            contours_pc[b], contours_normals[b], contours_trees[b]);
-      auto [ret2, links2] = find_contours_links(contours_pc[b], contours_normals[b], contours_trees[b],
+      auto [ret2, links2] = find_contours_matches(contours_pc[b], contours_normals[b], contours_trees[b],
                                            contours_pc[a], contours_normals[a], contours_trees[a]);
 
       if (ret1 && ret2)
@@ -342,7 +342,7 @@ int main(int argc, char* argv[])
   print_step("Final filtering, smoothing and triangulation");
   for (unsigned int i = 0; i < groups_pc.size(); ++i)
   {
-    std::cout << "group " << i << ": \n";
+    std::cout << "group " << i << ": ";
 
     // Threshold on the groups global metric size
     Eigen::Vector3d eig_vals = pca_axes(groups_pc[i]);
@@ -419,7 +419,7 @@ std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>
     pcl::PointCloud<pcl::Normal>::Ptr ctr_norms(new pcl::PointCloud<pcl::Normal>());
     ctr_pc->resize(ordered_ctr.size());
     ctr_norms->resize(ordered_ctr.size());
-    for (int j = 0; j < ordered_ctr.size(); ++j)
+    for (unsigned int j = 0; j < ordered_ctr.size(); ++j)
     {
       ctr_pc->points[j] = parts_pc[i]->points[ordered_ctr[j]];
       ctr_norms->points[j] = parts_normals[i]->points[ordered_ctr[j]];
@@ -452,7 +452,7 @@ std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>
 
   std::vector<std::vector<Pointcloud::Ptr>> per_groups_pc(N, std::vector<Pointcloud::Ptr>());
   std::vector<std::vector<pcl::PointCloud<pcl::Normal>::Ptr>> per_groups_normals(N, std::vector<pcl::PointCloud<pcl::Normal>::Ptr>());
-  for (unsigned int i = 0; i < N; ++i)
+  for (int i = 0; i < N; ++i)
   {
     per_groups_pc[i].push_back(parts_pc[idx[i]]);
     per_groups_normals[i].push_back(parts_normals[idx[i]]);
@@ -463,12 +463,12 @@ std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>
     int a = idx[i];
 
     std::vector<Match_ab> poss_matches;
-    for (unsigned int k = 0; k < N; ++k)
+    for (int k = 0; k < N; ++k)
     {
       int b = idx[k];
-      auto [ret1, links1] = find_contours_links(contours_pc[a], contours_normals[a], contours_trees[a],
+      auto [ret1, links1] = find_contours_matches(contours_pc[a], contours_normals[a], contours_trees[a],
                                            contours_pc[b], contours_normals[b], contours_trees[b]);
-      auto [ret2, links2] = find_contours_links(contours_pc[b], contours_normals[b], contours_trees[b],
+      auto [ret2, links2] = find_contours_matches(contours_pc[b], contours_normals[b], contours_trees[b],
                                            contours_pc[a], contours_normals[a], contours_trees[a]);
       if (ret1 && ret2)
       {
@@ -501,7 +501,7 @@ std::pair<std::vector<Pointcloud::Ptr>, std::vector<pcl::PointCloud<pcl::Normal>
   // Recompose the sub-groups point cloud and normals
   std::vector<Pointcloud::Ptr> groups_pc(N, nullptr);
   std::vector<pcl::PointCloud<pcl::Normal>::Ptr> groups_normals(N, nullptr);
-  for (unsigned int i = 0; i < N; ++i)
+  for (int i = 0; i < N; ++i)
   {
     for (unsigned int j = 1; j < per_groups_pc[i].size(); ++j)
     {
