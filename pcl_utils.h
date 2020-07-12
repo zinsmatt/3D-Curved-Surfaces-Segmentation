@@ -42,6 +42,9 @@ class Match_debugger
 {
   public:
 
+  std::vector<Point> points;
+  std::vector<Point> other_points;
+
   void add_edge(Point a, Point b)
   {
     points.push_back(a);
@@ -61,7 +64,7 @@ class Match_debugger
     {
       file << "v " << std::to_string(p.x) << " " << std::to_string(p.y) << " " << std::to_string(p.z) << "\n";
     }
-    for (unsigned int i = 1; i <= points.size() / 2; i += 2)
+    for (unsigned int i = 1; i <= points.size(); i += 2)
     {
       file << "l " << i << " " << i+1 << "\n";
     }
@@ -74,9 +77,7 @@ class Match_debugger
     file.close();
   }
 
-  private:
-    std::vector<Point> points;
-    std::vector<Point> other_points;
+
 };
 
 #endif // PCLUTILS_H

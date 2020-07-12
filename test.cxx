@@ -646,11 +646,13 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
   std::vector<std::vector<int>> orders;
   orders.push_back({});
   std::vector<bool> done(ctr.size(), false);
-  unsigned int k = 0;
   for (unsigned int k = 0; k < ctr.size(); ++k)
   {
-    if (done[idx] && start == -1)
+    std::cout << "process idx = " << idx << "\n";
+    if (done[idx] && start == -1) {
+      std::cout << "done[idx] or start == -1\n";
       continue; 
+    }
     double sq_min_dist = std::numeric_limits<double>::infinity();
     unsigned int sq_min_dist_idx = -1;
     for (unsigned int i = 0; i < ctr.size(); ++i)
@@ -668,30 +670,70 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
 
     if (sq_min_dist > 1000) // if the next point is too far, it means we should create a new contour
     { // stuck
-
+    std::cout << "dist too large !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
       if (start != -1)
       {
+        std::cout << "go in other dir\n";
         // go in other direction from the start
+        orders.back().push_back(ctr[idx]);
+        done[idx] = true;
+
+        // check if the dist between last point and the initial point is larger than a reamingin pointlast dist
+        int first_idx = orders.back().front();
+        auto last_dist = sq_L2_dist(pc->points[ctr[first_idx]], pc->points[ctr[idx]]);
+        bool ok = false;
+        for (unsigned int i = 0; i < ctr.size(); ++i)
+        {
+          if (i != first_idx && !done[i])
+          {
+            auto d = sq_L2_dist(pc->points[ctr[first_idx]], pc->points[ctr[i]]);
+            if (d < last_dist)
+            {
+              ok = true;
+              break;
+            }
+          }
+        }
+        if (!ok)
+        {
+          break;
+        }
+
         idx = start;
         start = -1;
       }
       else
       {
+        std::cout << "start new contour \n";
         // start a new contour
         int start_again = 0;
         while (start_again < ctr.size() && done[start_again])
           ++start_again;
-        orders.push_back({});
+        orders.back().push_back(ctr[idx]);
         done[idx] = true;
+        orders.push_back({});
         idx = start_again;
         start = start_again;
         starts.push_back(start);
         continue;
       }
     }
+    std::cout << "add " << idx << " " << ctr[idx] << "\n";
     orders.back().push_back(ctr[idx]);
     done[idx] = true;
     idx = sq_min_dist_idx;
+    //std::cout << "next is " << sq_min_dist_idx << " "  << ctr[sq_min_dist_idx]  << std::endl;
+  }
+
+  std::cout << "nb order = " << orders.size() << "\n";
+  for (auto& v : orders)
+  {
+    std::cout << "order: ";
+    for (auto p : v)
+    {
+      cout << p << " ";
+    }
+    cout << std::endl;
   }
 
   int max_size = 0, max_size_idx = 0;
@@ -710,13 +752,25 @@ std::vector<int> organize_contour(Pointcloud::Ptr pc, const std::vector<int>& ct
   }
 
   auto& best_order = orders[max_size_idx];
-  int i = 0;
+      std::cout << "best order before \n"; for (auto p : best_order)
+    {
+      cout << p << " ";
+    }
+    cout << std::endl;
+  int i = 1;
   while (i < best_order.size() && best_order[i] != best_order[0])
     ++i;
   if (i < best_order.size())
   {
     std::reverse(best_order.begin() + i, best_order.end());
   }
+
+      std::cout << "best order after \n"; for (auto p : best_order)
+    {
+      cout << p << " ";
+    }
+    cout << std::endl;
+
   return best_order;
 }
 
@@ -1098,6 +1152,57 @@ Eigen::Vector3d pca_axes(Pointcloud::Ptr pc)
 }
 
 int main(int argc, char* argv[])
+{
+
+    Pointcloud::Ptr ctr(new Pointcloud());
+  pcl::io::loadPLYFile("/home/matt/dev/Seismic_3D_Volume/build/parts_ctr/part_48.ply", *ctr);
+
+  std::vector<int> indices(ctr->size());
+  std::iota(indices.begin(), indices.end(), 0);
+  auto ordered_ctr = organize_contour(ctr, indices);
+
+  Pointcloud::Ptr ordered(new Pointcloud());
+  for (auto i : ordered_ctr)
+  {
+    ordered->push_back(ctr->points[i]);
+  }
+  pcl::io::savePLYFile("debug_ordering_contour.ply", *ordered);
+
+
+
+  std::vector<double> weights = {1.0/16, 1.0/16, 2.0/16, 4.0/16, 0.0, 4.0/16, 2.0/16, 1.0/16, 1.0/16};
+      Pointcloud::Ptr smooth(new Pointcloud());
+      *smooth = *ordered;
+      for (int j = 0; j < ordered->size(); ++j)
+      {
+        double tot_x = 0.0;
+        double tot_y = 0.0;
+        double tot_z = 0.0;
+        std::cout << "pt " << j <<" : ";
+        for (int d = -4; d <= 4; ++d)
+        {
+          int idx = (j + d) %  (int)(ordered->size());
+          if (idx < 0)
+            idx += ordered->size();
+            std::cout << idx << " " ;
+          tot_x += ordered->points[idx].x;
+          tot_y += ordered->points[idx].y;
+          tot_z += ordered->points[idx].z;
+        }
+        std::cout << "\n";
+        smooth->points[j].x = tot_x / 9;
+        smooth->points[j].y = tot_y / 9;
+        smooth->points[j].z = tot_z / 9;
+      }
+      
+
+      pcl::io::savePLYFile("debug_ordering_contour_smooth.ply", *smooth);
+
+  return 0;
+}
+
+
+int amain(int argc, char* argv[])
 {
 
   // pcl::PolygonMesh::Ptr mesh(new pcl::PolygonMesh());

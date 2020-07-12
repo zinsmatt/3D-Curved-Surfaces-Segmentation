@@ -62,7 +62,7 @@ Pointcloud::Ptr smooth_point_cloud(Pointcloud::Ptr pc, double radius, int polyno
   mls.setSearchRadius(radius);
   mls.setPolynomialOrder(polynomial_order);
   mls.setSearchMethod(tree);
-  mls.setNumberOfThreads(std::thread::hardware_concurrency());
+  //mls.setNumberOfThreads(std::thread::hardware_concurrency());
   mls.setPointDensity(point_density);
   mls.setSqrGaussParam(sqr_gauss_param);
   // Reconstruct
