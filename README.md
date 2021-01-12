@@ -2,7 +2,7 @@
 ([Link to challenge](https://www.topcoder.com/challenges/5863dfd8-f36c-468a-8930-b2bc16b9a92a?tab=details))
 
 
-The goal of this challenge is to detect and segment faults (curved surfaces) from seismic volume data. My solution is mainly based on point cloud analysis with PCL. The algorithms were developped in C++ and a dockerized version of the code is provided.
+The goal of this challenge was to detect and segment faults (curved surfaces) from 3D seismic volume data. My solution is based on point cloud analysis with PCL. The algorithms were developed in C++ and a dockerized version of the code is provided.
 
 
 <img src="doc/seismic_image.png" width=400 height=200>                     <img src="doc/seg.gif" width=400 height=200>
